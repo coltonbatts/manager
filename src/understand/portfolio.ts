@@ -79,7 +79,7 @@ export function latestPortfolio(db: DatabaseSync): { report: PortfolioReport; ge
 }
 
 export async function synthesizePortfolio(
-  db: DatabaseSync, llm: LLMProvider, model: string, projects: ProjectView[], force = false,
+  db: DatabaseSync, llm: LLMProvider, model: string, projects: ProjectView[], force = false, outDir = DATA_DIR,
 ): Promise<{ report: PortfolioReport; generatedAt: number; cached: boolean }> {
   const input = portfolioInput(db, projects);
   // Hash without the date line, so an unchanged portfolio stays cached across days.
@@ -91,7 +91,7 @@ export async function synthesizePortfolio(
   const generatedAt = Date.now();
   db.prepare("INSERT INTO reports (kind, input_hash, generated_at, model, json) VALUES ('portfolio', ?, ?, ?, ?)")
     .run(inputHash, generatedAt, model, JSON.stringify(report));
-  writeText(join(DATA_DIR, 'reports', `portfolio-${localDate(generatedAt)}.md`), portfolioMarkdown(report, generatedAt));
+  writeText(join(outDir, 'reports', `portfolio-${localDate(generatedAt)}.md`), portfolioMarkdown(report, generatedAt));
   return { report, generatedAt, cached: false };
 }
 

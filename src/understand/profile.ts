@@ -75,13 +75,14 @@ function profileMarkdown(p: ProjectView, prof: Profile, generatedAt: number): st
   ].join('\n');
 }
 
-export async function generateProfile(db: DatabaseSync, llm: LLMProvider, model: string, p: ProjectView): Promise<StoredProfile> {
+/** `outDir` receives the markdown copy (tests point it at their temp dir). */
+export async function generateProfile(db: DatabaseSync, llm: LLMProvider, model: string, p: ProjectView, outDir = DATA_DIR): Promise<StoredProfile> {
   const digest = await buildDigest(p);
   const profile = await llm.complete<Profile>({ system: SYSTEM, prompt: digest, schema: PROFILE_SCHEMA, model });
   const generatedAt = Date.now();
   db.prepare('INSERT OR REPLACE INTO profiles (project_id, fingerprint, generated_at, model, json) VALUES (?, ?, ?, ?, ?)')
     .run(p.id, p.facts.fingerprint, generatedAt, model, JSON.stringify(profile));
-  writeText(join(DATA_DIR, 'profiles', `${p.id}.md`), profileMarkdown(p, profile, generatedAt));
+  writeText(join(outDir, 'profiles', `${p.id}.md`), profileMarkdown(p, profile, generatedAt));
   return { profile, fingerprint: p.facts.fingerprint, generatedAt, model, fresh: true };
 }
 
@@ -94,14 +95,14 @@ export interface RefreshResult {
 /** Profiles every project whose fingerprint changed since its last profile. */
 export async function refreshProfiles(
   db: DatabaseSync, llm: LLMProvider, model: string, projects: ProjectView[],
-  opts: { force?: boolean; concurrency: number; onProgress?: (done: number, total: number, p: ProjectView) => void },
+  opts: { force?: boolean; concurrency: number; outDir?: string; onProgress?: (done: number, total: number, p: ProjectView) => void },
 ): Promise<RefreshResult> {
   const stale = projects.filter((p) => opts.force || !getProfile(db, p)?.fresh);
   const result: RefreshResult = { generated: 0, cached: projects.length - stale.length, failed: [] };
   let done = 0;
   await pool(stale, opts.concurrency, async (p) => {
     try {
-      await generateProfile(db, llm, model, p);
+      await generateProfile(db, llm, model, p, opts.outDir);
       result.generated++;
     } catch (err) {
       result.failed.push({ project: p, error: (err as Error).message });

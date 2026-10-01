@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
 import { openDb } from '../src/db.ts';
@@ -86,26 +87,28 @@ describe('profiles', () => {
 
   it('caches by fingerprint and re-profiles only what changed', async () => {
     const root = join(TMP, 'cache');
+    const out = join(TMP, 'cache-out'); // outside the scanned root
     fixture('cache', { 'alpha/a.ts': 'x', 'beta/b.ts': 'x' });
     const db = openDb(join(root, 'm.db'));
     const llm = new FakeProvider();
 
     await scanWithSelf(db, root);
-    let r = await refreshProfiles(db, llm, 'm', latestProjects(db), { concurrency: 2 });
+    let r = await refreshProfiles(db, llm, 'm', latestProjects(db), { concurrency: 2, outDir: out });
     assert.deepEqual([r.generated, r.cached], [2, 0]);
 
-    r = await refreshProfiles(db, llm, 'm', latestProjects(db), { concurrency: 2 });
+    r = await refreshProfiles(db, llm, 'm', latestProjects(db), { concurrency: 2, outDir: out });
     assert.deepEqual([r.generated, r.cached], [0, 2]);
 
     writeText(join(root, 'alpha', 'new.ts'), 'changed');
     await scanWithSelf(db, root);
-    r = await refreshProfiles(db, llm, 'm', latestProjects(db), { concurrency: 2 });
+    r = await refreshProfiles(db, llm, 'm', latestProjects(db), { concurrency: 2, outDir: out });
     assert.deepEqual([r.generated, r.cached], [1, 1]);
     assert.equal(llm.calls.length, 3);
     for (const p of latestProjects(db)) assert.equal(getProfile(db, p)?.fresh, true);
+    assert.ok(existsSync(join(out, 'profiles', 'alpha.md'))); // markdown goes to the test dir, never data/profiles
 
-    await synthesizePortfolio(db, llm, 'm', latestProjects(db));
-    const again = await synthesizePortfolio(db, llm, 'm', latestProjects(db));
+    await synthesizePortfolio(db, llm, 'm', latestProjects(db), false, out);
+    const again = await synthesizePortfolio(db, llm, 'm', latestProjects(db), false, out);
     assert.equal(again.cached, true);
     assert.equal(llm.calls.length, 4);
     db.close();
