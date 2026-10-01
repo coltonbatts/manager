@@ -3,9 +3,13 @@
   "configurations": [
     {
       "name": "manager",
+      "url": "http://localhost:4747"
+    },
+    {
+      "name": "manager-dev",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["--disable-warning=ExperimentalWarning", "src/cli.ts", "serve", "--port", "4747"],
-      "port": 4747
+      "runtimeArgs": ["--disable-warning=ExperimentalWarning", "src/cli.ts", "serve", "--port", "4748"],
+      "port": 4748
     }
   ]
 }

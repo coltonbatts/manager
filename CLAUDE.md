@@ -75,7 +75,8 @@ test/                   node:test; fixtures go in data/test-tmp via the guard
 
 ## Conventions
 
-- Commands: `npm test`, `npm run typecheck`, `./bin/manager.js <cmd>`. Preview the dashboard with `.claude/launch.json` (`manager`, port 4747).
+- Commands: `npm test`, `npm run typecheck`, `./bin/manager.js <cmd>`.
+- The dashboard runs always-on at login via `scripts/launch-agent.sh` (LaunchAgent `com.alternativedesign.manager`, port 4747, logs in `data/logs/serve.log`). After changing server code, restart it with `launchctl kickstart -k gui/$(id -u)/com.alternativedesign.manager`; CSS and `app.js` are read per request and need no restart. In `.claude/launch.json`, `manager` attaches to the live server and `manager-dev` runs a separate dev copy on port 4748.
 - Tests never call the real LLM. Use a fake `LLMProvider`. Test fixtures go in `TMP` from `test/helpers.ts` (one dir per test process). Scan fixtures with `scanFixture`, which overrides discovery's self-exclusion.
 - `claude -p` hangs (it retries silently) when the CLI's OAuth login has expired. The provider times out with a hint to `/login`.
 - Terminal tone is quiet: dim and bold, no color, no emoji.
