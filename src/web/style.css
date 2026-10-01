@@ -205,3 +205,16 @@ footer { margin-top: 6rem; padding-top: 1rem; border-top: 1px solid var(--rule);
   .gauge.large { grid-template-columns: 5.5rem 1fr 3rem; }
 }
 @media (prefers-reduced-motion: reduce) { .g-fill { transition: none; } }
+
+/* where you left off · you've built this before */
+.leftoff { max-width: 46rem; }
+.leftoff .session { font-size: 1.15rem; line-height: 1.5; margin: 0 0 1.75rem; }
+.leftoff .first { border-left: 2px solid var(--accent); padding: .2rem 0 .2rem 1.25rem; margin-bottom: 2rem; }
+.leftoff .first p { margin: .35rem 0 0; }
+.tag { font: 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+.sub { font: 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); font-weight: 400; margin: 1.75rem 0 .75rem; }
+.lead-note { font-size: 1.15rem; max-width: 46rem; margin: 0 0 1.5rem; }
+.reuse { list-style: none; padding: 0; margin: .6rem 0 0; font-size: .92rem; color: var(--ink-2); }
+.reuse li { padding: .2rem 0; border: 0; }
+.reuse code { margin-right: .4rem; }
+.card .resume { color: var(--accent); margin-top: .35rem; }

@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
 import { openDb } from '../src/db.ts';
 import { writeText } from '../src/fs/guard.ts';
+import { parseCallUsage } from '../src/llm/claude-cli.ts';
+import { callsByTask, recordCall } from '../src/usage/calls.ts';
 import { elapsedFraction, parseLimits, parseReset } from '../src/usage/limits.ts';
 import { parseTranscript, syncTranscripts, usageByDay } from '../src/usage/transcripts.ts';
 import { cleanup, fixture, TMP } from './helpers.ts';
@@ -83,6 +85,43 @@ describe('transcript usage', () => {
     assert.deepEqual(await syncTranscripts(db, dir), { files: 2, parsed: 1 });
     const total = usageByDay(db, 3650, Date.parse('2026-10-01T12:00:00Z')).reduce((a, d) => a + d.requests, 0);
     assert.equal(total, 5); // a: 2, b (rewritten as a copy of a's ids + one more): 3
+    db.close();
+  });
+});
+
+describe("Manager's own calls", () => {
+  const envelope = JSON.stringify({
+    type: 'result', result: '{}', total_cost_usd: 0.0123, duration_ms: 2400,
+    modelUsage: {
+      'claude-haiku-4-5-20251001': { inputTokens: 100, outputTokens: 10, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, costUSD: 0.0002 },
+      'claude-sonnet-5-5': { inputTokens: 2, outputTokens: 400, cacheReadInputTokens: 50, cacheCreationInputTokens: 900, costUSD: 0.0121 },
+    },
+  });
+
+  it('reads tokens, cost and the dominant model from the CLI envelope', () => {
+    assert.deepEqual(parseCallUsage(envelope), {
+      model: 'claude-sonnet-5-5', input: 102, output: 410, cacheRead: 50, cacheWrite: 900, costUsd: 0.0123, durationMs: 2400,
+    });
+  });
+
+  it('returns null when there is no usage to read', () => {
+    assert.equal(parseCallUsage('not json'), null);
+    assert.equal(parseCallUsage(JSON.stringify({ result: 'x' })), null);
+  });
+
+  it('records calls and totals them per task and model', () => {
+    const db = openDb(join(TMP, 'calls.db'));
+    const base = { at: 1_000, model: 'claude-sonnet-5-5', ok: true, input: 10, output: 20, cacheRead: 30, cacheWrite: 40, costUsd: 0.5, durationMs: 1000 };
+    recordCall(db, { ...base, task: 'profile' });
+    recordCall(db, { ...base, task: 'profile', ok: false, costUsd: 0.25, durationMs: 3000 });
+    recordCall(db, { ...base, task: 'portfolio', model: 'claude-opus-5-5', costUsd: 2 });
+    recordCall(db, { ...base, task: 'profile', at: 5 }); // before the window
+    const rows = callsByTask(db, 1_000);
+    assert.deepEqual(rows.map((r) => [r.task, r.model, r.calls, r.failed, r.costUsd]), [
+      ['portfolio', 'claude-opus-5-5', 1, 0, 2],
+      ['profile', 'claude-sonnet-5-5', 2, 1, 0.75],
+    ]);
+    assert.equal(rows[1].avgMs, 2000);
     db.close();
   });
 });

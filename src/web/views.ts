@@ -9,6 +9,8 @@ import { tildify } from '../paths.ts';
 import type { ProjectView, State } from '../store.ts';
 import type { PortfolioReport } from '../understand/portfolio.ts';
 import type { StoredProfile } from '../understand/profile.ts';
+import type { PriorArt } from '../understand/prior-art.ts';
+import type { StoredNote } from '../understand/reentry.ts';
 import { ago, bytes } from '../ui.ts';
 import { html, raw, type Html } from './html.ts';
 
@@ -70,13 +72,14 @@ function metaLine(p: ProjectView): Html {
   return html`<div class="meta">${bits.map((b, i) => html`${i ? ' · ' : ''}${b}`)}</div>`;
 }
 
-function card(p: ProjectView, profile: StoredProfile | null, weeks: number[], i: number): Html {
+function card(p: ProjectView, profile: StoredProfile | null, weeks: number[], i: number, hasNote = false): Html {
   const blurb = profile?.profile.summary;
-  return html`<a class="card" href="/p/${p.id}" style="--i:${i}">
+  return html`<a class="card" href="/p/${p.id}${hasNote ? '#left-off' : ''}" style="--i:${i}">
     <h3>${p.name}</h3>
     ${blurb ? html`<p>${blurb}</p>` : ''}
     ${strip(weeks)}
     ${metaLine(p)}
+    ${hasNote ? html`<div class="meta resume">↩ where you left off</div>` : ''}
   </a>`;
 }
 
@@ -87,6 +90,8 @@ export interface OverviewData {
   report: { report: PortfolioReport; generatedAt: number } | null;
   week: { touched: number; commits: number; shipped: number };
   scannedAt: number | null;
+  notes: Set<string>; // project ids with a fresh re-entry note
+  priorArt: { p: ProjectView; result: PriorArt }[]; // young projects with earlier relatives
 }
 
 const GROUPS: { state: State; label: string }[] = [
@@ -111,7 +116,7 @@ export function overview(d: OverviewData): string {
     if (!ps.length) return '';
     return html`<section>
       <h2 class="label">${label} <span class="n">${ps.length}</span></h2>
-      <div class="wall">${ps.map((p) => card(p, d.profiles.get(p.id) ?? null, d.weekly.get(p.id) ?? new Array(26).fill(0), i++))}</div>
+      <div class="wall">${ps.map((p) => card(p, d.profiles.get(p.id) ?? null, d.weekly.get(p.id) ?? new Array(26).fill(0), i++, d.notes.has(p.id)))}</div>
     </section>`;
   });
 
@@ -123,6 +128,11 @@ export function overview(d: OverviewData): string {
       <h1>${headline}</h1>
       <div class="week">This week: <b>${d.week.touched}</b> ${d.week.touched === 1 ? 'project' : 'projects'} touched · <b>${d.week.commits}</b> commits · <b>${d.week.shipped}</b> shipped · scanned ${ago(d.scannedAt)}</div>
     </div>
+    ${d.priorArt.length ? html`<section>
+      <h2 class="label">You've built this before <span class="n">${d.priorArt.length}</span></h2>
+      <ul class="notes">${d.priorArt.map(({ p, result }) => html`<li><a href="/p/${p.id}#built-before"><span class="who">${p.name}</span></a> · ${result.headline}
+        <small>related: ${result.related.map((r) => r.project).join(', ')}</small></li>`)}</ul>
+    </section>` : ''}
     ${focus ? html`<section><h2 class="label">If you pick one thing</h2><div class="focus"><h3>${focus.project}</h3><p>${focus.why}</p></div></section>` : ''}
     ${groups}
     ${rest.length ? html`<section>
@@ -151,6 +161,8 @@ export interface ProjectData {
   weeks: number[]; // 52
   signals: { date: string; kind: string; text: string }[];
   marks: { date: string; type: string; note: string | null }[];
+  note: StoredNote | null;
+  priorArt: PriorArt | null;
 }
 
 export function projectPage(d: ProjectData): string {
@@ -169,6 +181,8 @@ export function projectPage(d: ProjectData): string {
       ${pr ? html`<p>${pr.summary}</p>` : html`<p class="empty-state">Not profiled yet. Run <code>manager project ${p.id}</code> or <code>manager report</code>.</p>`}
       <div class="path">${tildify(p.path)}</div>
     </div>
+    ${d.note ? leftOff(d.note) : ''}
+    ${d.priorArt?.related.length ? builtBefore(d.priorArt) : ''}
     <section>
       <h2 class="label">Last 52 weeks</h2>
       ${strip(d.weeks, 720, 40, 'big-strip')}
@@ -213,6 +227,30 @@ export function projectPage(d: ProjectData): string {
       </div>
     </section>
   `);
+}
+
+function leftOff(s: StoredNote): Html {
+  const n = s.note;
+  return html`<section id="left-off">
+    <h2 class="label">Where you left off ${s.fresh ? '' : html`<span class="n">you've worked on it since</span>`}</h2>
+    <div class="leftoff">
+      <p class="session">${n.lastSession}</p>
+      <div class="first"><span class="tag">First step</span><p>${n.firstStep}</p></div>
+      ${n.inFlight.length ? html`<h3 class="sub">In flight</h3><ul class="notes">${n.inFlight.map((x) => html`<li>${x}</li>`)}</ul>` : ''}
+      ${n.remember.length ? html`<h3 class="sub">Remember</h3><ul class="notes">${n.remember.map((x) => html`<li>${x}</li>`)}</ul>` : ''}
+      <p class="caveat">${n.confidence} confidence · written ${ago(s.generatedAt)} from your last session's commits, uncommitted changes and touched files.</p>
+    </div>
+  </section>`;
+}
+
+function builtBefore(r: PriorArt): Html {
+  return html`<section id="built-before">
+    <h2 class="label">You've built this before</h2>
+    <p class="lead-note">${r.headline}</p>
+    <ul class="notes">${r.related.map((x) => html`<li><span class="who">${x.project}</span> · ${x.relation.replace('-', ' ')}<small>${x.reached}</small>
+      ${x.reuse.length ? html`<ul class="reuse">${x.reuse.map((u) => html`<li><code>${u.path}</code> ${u.why}</li>`)}</ul>` : ''}</li>`)}</ul>
+    <div class="focus" style="margin-top:1.5rem"><p>${r.advice}</p></div>
+  </section>`;
 }
 
 function bars(values: number[], labels: string[], alt?: number[]): Html {

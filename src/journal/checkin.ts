@@ -110,6 +110,7 @@ Write 2–4 questions grounded in the context data.
 
 export async function llmQuestions(llm: LLMProvider, model: string, ctx: CheckinContext): Promise<Question[]> {
   const r = await llm.complete<{ questions: Question[] }>({
+    task: 'checkin',
     system: SYSTEM,
     prompt: `Context (JSON):\n${JSON.stringify(ctx, null, 1)}`,
     schema: CHECKIN_SCHEMA,

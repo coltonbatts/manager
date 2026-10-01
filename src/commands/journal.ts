@@ -1,5 +1,5 @@
 import { createInterface } from 'node:readline/promises';
-import { loadConfig } from '../config.ts';
+import { loadConfig, modelFor } from '../config.ts';
 import { openDb } from '../db.ts';
 import { buildContext, fallbackQuestions, llmQuestions } from '../journal/checkin.ts';
 import { correlate, describeCorrelation } from '../journal/correlate.ts';
@@ -79,7 +79,7 @@ export async function checkinCommand(): Promise<void> {
   let source = 'llm';
   if (process.stderr.isTTY) process.stderr.write(dim('thinking…'));
   try {
-    questions = await llmQuestions(createProvider(config.llm), config.llm.reportModel, ctx);
+    questions = await llmQuestions(createProvider(config.llm, db), modelFor(config.llm, 'checkin'), ctx);
   } catch (err) {
     source = 'fallback';
     questions = fallbackQuestions(ctx);

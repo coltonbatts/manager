@@ -87,7 +87,7 @@ export async function synthesizePortfolio(
   const last = latestPortfolio(db);
   if (!force && last && last.inputHash === inputHash) return { report: last.report, generatedAt: last.generatedAt, cached: true };
 
-  const report = await llm.complete<PortfolioReport>({ system: SYSTEM, prompt: input, schema: PORTFOLIO_SCHEMA, model });
+  const report = await llm.complete<PortfolioReport>({ task: 'portfolio', system: SYSTEM, prompt: input, schema: PORTFOLIO_SCHEMA, model });
   const generatedAt = Date.now();
   db.prepare("INSERT INTO reports (kind, input_hash, generated_at, model, json) VALUES ('portfolio', ?, ?, ?, ?)")
     .run(inputHash, generatedAt, model, JSON.stringify(report));

@@ -1,5 +1,6 @@
 import { join, resolve } from 'node:path';
 import { readTextSafe } from './fs/read.ts';
+import { LLM_TASKS, type LLMTask } from './llm/provider.ts';
 import { expandHome, ROOT } from './paths.ts';
 
 export interface RootConfig {
@@ -23,8 +24,9 @@ export interface Config {
 export interface LLMConfig {
   provider: 'claude-cli';
   command: string;
-  model: string; // per-project profiles
-  reportModel: string; // portfolio synthesis, patterns, check-ins
+  model: string; // default for per-project work: profiles, re-entry notes, prior art
+  reportModel: string; // default for portfolio synthesis, patterns, check-ins
+  models: Partial<Record<LLMTask, string>>; // per-task override of the two defaults
   timeoutSeconds: number;
   concurrency: number;
 }
@@ -40,6 +42,13 @@ interface RawConfig {
   llm?: Partial<LLMConfig>;
   journal?: { shareTextWithLLM?: boolean };
   usage?: { refreshMinutes?: number; transcriptsDir?: string };
+}
+
+const REPORT_TASKS: readonly LLMTask[] = ['portfolio', 'patterns', 'checkin'];
+
+/** The model for one kind of call: its own override, else the per-project or report default. */
+export function modelFor(cfg: Pick<LLMConfig, 'model' | 'reportModel' | 'models'>, task: LLMTask): string {
+  return cfg.models[task] ?? (REPORT_TASKS.includes(task) ? cfg.reportModel : cfg.model);
 }
 
 export const CONFIG_PATH = join(ROOT, 'manager.config.json');
@@ -65,6 +74,7 @@ export function normalizeConfig(raw: RawConfig): Config {
       command: expandHome(raw.llm?.command ?? 'claude'),
       model: raw.llm?.model ?? 'sonnet',
       reportModel: raw.llm?.reportModel ?? 'opus',
+      models: validModels(raw.llm?.models),
       timeoutSeconds: raw.llm?.timeoutSeconds ?? 180,
       concurrency: raw.llm?.concurrency ?? 3,
     },
@@ -75,4 +85,16 @@ export function normalizeConfig(raw: RawConfig): Config {
       transcriptsDir: abs(raw.usage?.transcriptsDir ?? '~/.claude/projects'),
     },
   };
+}
+
+function validModels(raw: unknown): Partial<Record<LLMTask, string>> {
+  if (raw === undefined) return {};
+  if (typeof raw !== 'object' || raw === null) throw new Error('config llm.models must be an object of task → model');
+  const out: Partial<Record<LLMTask, string>> = {};
+  for (const [task, model] of Object.entries(raw)) {
+    if (!(LLM_TASKS as readonly string[]).includes(task)) throw new Error(`config llm.models: unknown task "${task}" (expected one of ${LLM_TASKS.join(', ')})`);
+    if (typeof model !== 'string' || !model) throw new Error(`config llm.models.${task} must be a model name`);
+    out[task as LLMTask] = model;
+  }
+  return out;
 }

@@ -1,4 +1,4 @@
-import { loadConfig } from '../config.ts';
+import { loadConfig, modelFor } from '../config.ts';
 import { openDb } from '../db.ts';
 import { createProvider } from '../llm/index.ts';
 import { printCorrelations } from './journal.ts';
@@ -75,7 +75,7 @@ export async function patternsCommand(args: string[]): Promise<void> {
   const config = loadConfig();
   if (process.stderr.isTTY) process.stderr.write(dim('\nforming hypotheses…'));
   try {
-    const { report, generatedAt, cached } = await formHypotheses(db, createProvider(config.llm), config.llm.reportModel, patterns, args.includes('--force'));
+    const { report, generatedAt, cached } = await formHypotheses(db, createProvider(config.llm, db), modelFor(config.llm, 'patterns'), patterns, args.includes('--force'));
     if (process.stderr.isTTY) process.stderr.write('\r\x1b[K');
     console.log(`\n${bold('Hypotheses')}  ${dim(`${ago(generatedAt)}${cached ? ', metrics unchanged since' : ''}`)}`);
     report.hypotheses.forEach((h, i) => {

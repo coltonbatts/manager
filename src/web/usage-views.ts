@@ -2,6 +2,7 @@
 // and a fuller section on the journal page.
 
 import { compact } from '../commands/usage.ts';
+import { usd, type TaskUsage } from '../usage/calls.ts';
 import { elapsedFraction, type Limit } from '../usage/limits.ts';
 import type { UsageTotals } from '../usage/transcripts.ts';
 import { ago } from '../ui.ts';
@@ -59,6 +60,7 @@ export interface UsageSectionData {
   days: ({ date: string } & UsageTotals)[];
   projects: { project: string; requests: number; output: number }[];
   models: { model: string; requests: number }[];
+  calls: TaskUsage[]; // Manager's own LLM calls, last 7 days
 }
 
 function dayBars(days: UsageSectionData['days']): Html {
@@ -78,6 +80,15 @@ function dayBars(days: UsageSectionData['days']): Html {
     }
   });
   return raw(`<svg class="bars" viewBox="0 0 ${W} ${H}" role="img" aria-label="Claude requests per day, last ${days.length} days">${out}</svg>`);
+}
+
+function managerCalls(calls: TaskUsage[]): Html {
+  if (!calls.length) return html`<h3 class="label" style="margin-top:3rem">Manager's own calls · 7 days</h3><p class="empty-state">None yet. Calls are recorded from now on.</p>`;
+  const total = calls.reduce((a, c) => a + c.costUsd, 0);
+  const n = calls.reduce((a, c) => a + c.calls, 0);
+  return html`<h3 class="label" style="margin-top:3rem">Manager's own calls · 7 days <span class="n">${n}</span></h3>
+    <dl class="facts">${calls.map((c) => html`<dt>${c.calls}</dt><dd>${c.task} <span class="n">${c.model.replace(/^claude-/, '')} · ${compact(c.output)} out · ${usd(c.costUsd)}${c.failed ? ` · ${c.failed} unusable` : ''}</span></dd>`)}</dl>
+    <p class="caveat">${usd(total)} at list prices, which is an estimate: a subscription isn't billed per token. These calls leave no transcript, so they're counted here and not in the requests above.</p>`;
 }
 
 export function usageSection(d: UsageSectionData, now = Date.now()): Html {
@@ -107,6 +118,7 @@ export function usageSection(d: UsageSectionData, now = Date.now()): Html {
         ${d.models.length ? html`<p class="caveat">${d.models.slice(0, 3).map((m) => `${m.model.replace(/^claude-/, '')} ${Math.round((m.requests / totalModels) * 100)}%`).join(' · ')}</p>` : ''}
       </div>
     </div>
+    ${managerCalls(d.calls)}
     <p class="private">From <code>claude /usage</code> and the token counts in your local Claude Code transcripts. Only numbers are read, never conversation text. Doesn't include claude.ai or other devices.</p>
   </section>`;
 }

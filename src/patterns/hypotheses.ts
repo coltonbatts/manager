@@ -67,6 +67,7 @@ export async function formHypotheses(
     return { report: JSON.parse(last.json) as PatternsReport, generatedAt: last.generated_at, cached: true };
   }
   const report = await llm.complete<PatternsReport>({
+    task: 'patterns',
     system: SYSTEM,
     prompt: `Metrics (JSON):\n${JSON.stringify(p, null, 1)}`,
     schema: HYPOTHESES_SCHEMA,

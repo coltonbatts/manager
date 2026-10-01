@@ -78,7 +78,7 @@ function profileMarkdown(p: ProjectView, prof: Profile, generatedAt: number): st
 /** `outDir` receives the markdown copy (tests point it at their temp dir). */
 export async function generateProfile(db: DatabaseSync, llm: LLMProvider, model: string, p: ProjectView, outDir = DATA_DIR): Promise<StoredProfile> {
   const digest = await buildDigest(p);
-  const profile = await llm.complete<Profile>({ system: SYSTEM, prompt: digest, schema: PROFILE_SCHEMA, model });
+  const profile = await llm.complete<Profile>({ task: 'profile', system: SYSTEM, prompt: digest, schema: PROFILE_SCHEMA, model });
   const generatedAt = Date.now();
   db.prepare('INSERT OR REPLACE INTO profiles (project_id, fingerprint, generated_at, model, json) VALUES (?, ?, ?, ?, ?)')
     .run(p.id, p.facts.fingerprint, generatedAt, model, JSON.stringify(profile));

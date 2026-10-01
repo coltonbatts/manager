@@ -1,9 +1,11 @@
-import { loadConfig } from '../config.ts';
+import { loadConfig, modelFor } from '../config.ts';
 import { openDb } from '../db.ts';
 import { createProvider } from '../llm/index.ts';
 import { lastScan, latestProjects } from '../store.ts';
 import { synthesizePortfolio, type PortfolioReport } from '../understand/portfolio.ts';
+import { refreshPriorArt } from '../understand/prior-art.ts';
 import { refreshProfiles } from '../understand/profile.ts';
+import { refreshReentryNotes } from '../understand/reentry.ts';
 import { ago, bold, dim } from '../ui.ts';
 
 export async function reportCommand(args: string[]): Promise<void> {
@@ -14,13 +16,13 @@ export async function reportCommand(args: string[]): Promise<void> {
     console.log('No scans yet. Run `manager scan` first.');
     return;
   }
-  const llm = createProvider(config.llm);
+  const llm = createProvider(config.llm, db);
   const projects = latestProjects(db);
 
   const progress = process.stderr.isTTY
     ? (done: number, total: number, p: { name: string }) => process.stderr.write(`\r\x1b[K${dim(`profiling ${done}/${total} · ${p.name}`)}`)
     : undefined;
-  const r = await refreshProfiles(db, llm, config.llm.model, projects, { force, concurrency: config.llm.concurrency, onProgress: progress });
+  const r = await refreshProfiles(db, llm, modelFor(config.llm, 'profile'), projects, { force, concurrency: config.llm.concurrency, onProgress: progress });
   if (progress) process.stderr.write('\r\x1b[K');
   if (r.generated || r.failed.length) console.log(dim(`profiles: ${r.generated} new · ${r.cached} cached${r.failed.length ? ` · ${r.failed.length} failed` : ''}`));
   for (const f of r.failed.slice(0, 5)) console.log(dim(`  ! ${f.project.name}: ${f.error}`));
@@ -30,8 +32,20 @@ export async function reportCommand(args: string[]): Promise<void> {
     return;
   }
 
+  if (progress) process.stderr.write(dim('writing re-entry notes · checking new projects against past work…'));
+  const fresh = latestProjects(db);
+  const [notes, prior] = await Promise.all([
+    refreshReentryNotes(db, llm, modelFor(config.llm, 'reentry'), fresh, { concurrency: config.llm.concurrency }),
+    refreshPriorArt(db, llm, modelFor(config.llm, 'prior-art'), fresh, { concurrency: 2, scanModel: modelFor(config.llm, 'prior-art-scan') }),
+  ]);
+  if (progress) process.stderr.write('\r\x1b[K');
+  if (notes.generated || prior.checked) {
+    console.log(dim(`re-entry notes: ${notes.generated} written · new projects checked: ${prior.checked}, ${prior.withMatches} with earlier relatives`));
+  }
+  for (const f of [...notes.failed, ...prior.failed].slice(0, 5)) console.log(dim(`  ! ${f.project.name}: ${f.error}`));
+
   if (progress) process.stderr.write(dim('synthesizing portfolio…'));
-  const { report, generatedAt, cached } = await synthesizePortfolio(db, llm, config.llm.reportModel, projects, force);
+  const { report, generatedAt, cached } = await synthesizePortfolio(db, llm, modelFor(config.llm, 'portfolio'), projects, force);
   if (progress) process.stderr.write('\r\x1b[K');
   printReport(report, generatedAt, cached);
 }

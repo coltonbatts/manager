@@ -1,5 +1,6 @@
 import { loadConfig } from '../config.ts';
 import { openDb } from '../db.ts';
+import { callsByTask, usd } from '../usage/calls.ts';
 import { elapsedFraction, latestLimits, refreshLimits, type Limit } from '../usage/limits.ts';
 import { syncTranscripts, usageByDay, usageByProject } from '../usage/transcripts.ts';
 import { ago, bold, dim } from '../ui.ts';
@@ -56,5 +57,12 @@ export async function usageCommand(): Promise<void> {
     console.log(`\n${bold('Where it went')} ${dim('· last 7 days, by working folder')}`);
     for (const p of projects) console.log(`  ${String(p.requests).padStart(5)}  ${p.project}`);
   }
+  const calls = callsByTask(db, Date.now() - 7 * 86_400_000);
+  console.log(`\n${bold("Manager's own calls")} ${dim('· last 7 days')}`);
+  if (!calls.length) console.log(dim('  none recorded yet'));
+  for (const c of calls) {
+    console.log(`  ${String(c.calls).padStart(5)}  ${c.task.padEnd(15)} ${c.model.replace(/^claude-/, '').padEnd(14)} ${dim(`${compact(c.output)} out · ${usd(c.costUsd)}${c.failed ? ` · ${c.failed} unusable` : ''}`)}`);
+  }
+  if (calls.length) console.log(dim(`  ${usd(calls.reduce((a, c) => a + c.costUsd, 0))} at list prices (an estimate; a subscription isn't billed per token). Not in the counts above: these calls leave no transcript.`));
   console.log(dim('\nToken counts come from local Claude Code transcripts on this machine (not claude.ai or other devices). Only numbers are read.'));
 }

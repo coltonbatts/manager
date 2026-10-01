@@ -113,6 +113,42 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX usage_file_days_date ON usage_file_days(date);
   `,
+  `
+  -- "Where you left off": one note per project per fingerprint; stale once the project changes.
+  CREATE TABLE reentry_notes (
+    project_id   TEXT NOT NULL REFERENCES projects(id),
+    fingerprint  TEXT NOT NULL,
+    generated_at INTEGER NOT NULL,
+    model        TEXT NOT NULL,
+    json         TEXT NOT NULL,
+    PRIMARY KEY (project_id, fingerprint)
+  );
+  -- "You've built this before": related earlier projects and what to reuse from them.
+  CREATE TABLE prior_art (
+    project_id   TEXT PRIMARY KEY REFERENCES projects(id),
+    generated_at INTEGER NOT NULL,
+    model        TEXT NOT NULL,
+    json         TEXT NOT NULL
+  );
+  `,
+  `
+  -- Manager's own claude -p calls. They leave no transcript, so this is the only record of what they cost.
+  -- Numbers only. cost_usd is the CLI's list-price estimate.
+  CREATE TABLE llm_calls (
+    id          INTEGER PRIMARY KEY,
+    at          INTEGER NOT NULL,
+    task        TEXT NOT NULL,
+    model       TEXT NOT NULL,
+    ok          INTEGER NOT NULL,
+    input       INTEGER NOT NULL,
+    output      INTEGER NOT NULL,
+    cache_read  INTEGER NOT NULL,
+    cache_write INTEGER NOT NULL,
+    cost_usd    REAL NOT NULL,
+    duration_ms INTEGER NOT NULL
+  );
+  CREATE INDEX llm_calls_at ON llm_calls(at);
+  `,
 ];
 
 export function openDb(file = join(DATA_DIR, 'manager.db')): DatabaseSync {

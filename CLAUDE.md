@@ -43,6 +43,8 @@ src/understand/digest.ts   per-project text the LLM sees (facts, commits, tree, 
 src/understand/redact.ts   credential scrubber applied to every digest
 src/understand/profile.ts  per-project profiles, cached by snapshot fingerprint → data/profiles/*.md
 src/understand/portfolio.ts portfolio synthesis, cached by input hash → data/reports/*.md
+src/understand/reentry.ts  "where you left off" notes for projects quiet 2–60 days: last session's commits, uncommitted diff (secret files dropped), touched files, TODOs → data/reentry/*.md; stale when the fingerprint changes
+src/understand/prior-art.ts "you've built this before" for projects < 30 days old: stage 1 picks relatives from the whole catalog, stage 2 reads their file lists; reuse paths are verified against real files
 src/patterns/metrics.ts    deterministic metrics from activity_days/signals/events (every number carries its n)
 src/patterns/hypotheses.ts LLM hypotheses over the metrics, with evidence, alternative and falsifier
 src/journal/journal.ts     data/journal.db (entries, checkins). Separate from manager.db
@@ -55,6 +57,7 @@ src/web/style.css       the whole design: paper/ink tokens, one accent, light + 
 src/web/app.js          the only client script: refreshes the masthead usage gauge from /api/usage
 src/web/usage-views.ts  usage gauges (masthead on every page via <!--usage--> placeholder) + Journal "Claude" section
 src/usage/limits.ts     plan limits from `claude -p /usage` (local command, no model call); parsed + stored in usage_limits
+src/usage/calls.ts       Manager's own `claude -p` calls (llm_calls): tokens + list-price cost per task and model. These leave no transcript
 src/usage/transcripts.ts token counts from ~/.claude/projects/**/*.jsonl, incremental per file; numbers only
 src/commands/*.ts       CLI commands
 test/                   node:test; fixtures go in data/test-tmp via the guard
@@ -69,6 +72,7 @@ test/                   node:test; fixtures go in data/test-tmp via the guard
 - **Identity**: git stats count only commits whose author matches `identities` in the config. Repos with history but none of it yours are `foreign` (clones) and left out of pattern stats.
 - **activity_days**: `git` rows are recomputed from full history every scan. `files` rows (mtime per day) only ever grow, since mtimes move forward. An active day is the union of both.
 - **Claude usage**: `manager serve` refreshes plan limits and transcript totals every `usage.refreshMinutes`. Gauges show fill = % used and a thin mark = % of the window elapsed (5h session, 7d week). Transcripts are a second read root (`usage.transcriptsDir`). Only date/project/model/token counts are extracted, never message content, and none of it goes to the LLM.
+- **Continuity**: `manager report` writes re-entry notes and prior-art checks after profiles. `manager resume <p>` / `manager similar <p>` run them on demand. `git diff` is only allowed with `--no-ext-diff --no-textconv` (enforced in git.ts), so a repo's config can't make Manager run programs.
 - **Ship evidence**: release tags, launch-like commit subjects (`SHIP_RE` in facts.ts), and manual `manager mark` events.
 - Journal data lives in `data/journal.db`, separate from project data. Journal **text** is sent to the LLM only if `journal.shareTextWithLLM` is true (default false). Check-ins otherwise see only scores and activity.
 - Never write test or demo rows into the real `data/journal.db` or `data/manager.db`. Use `TMP` databases in tests.
@@ -77,6 +81,7 @@ test/                   node:test; fixtures go in data/test-tmp via the guard
 
 - Commands: `npm test`, `npm run typecheck`, `./bin/manager.js <cmd>`.
 - The dashboard runs always-on at login via `scripts/launch-agent.sh` (LaunchAgent `com.alternativedesign.manager`, port 4747, logs in `data/logs/serve.log`). After changing server code, restart it with `launchctl kickstart -k gui/$(id -u)/com.alternativedesign.manager`; CSS and `app.js` are read per request and need no restart. In `.claude/launch.json`, `manager` attaches to the live server and `manager-dev` runs a separate dev copy on port 4748.
+- Model routing: every `LLMRequest` carries a `task` (`LLM_TASKS` in provider.ts). `modelFor(config.llm, task)` picks the model: `llm.models[task]`, else `llm.model` (profile, reentry, prior-art, prior-art-scan) or `llm.reportModel` (portfolio, patterns, checkin). Pass `db` to `createProvider` so each call's usage lands in `llm_calls`.
 - Tests never call the real LLM. Use a fake `LLMProvider`. Test fixtures go in `TMP` from `test/helpers.ts` (one dir per test process). Scan fixtures with `scanFixture`, which overrides discovery's self-exclusion.
 - `claude -p` hangs (it retries silently) when the CLI's OAuth login has expired. The provider times out with a hint to `/login`.
 - Terminal tone is quiet: dim and bold, no color, no emoji.

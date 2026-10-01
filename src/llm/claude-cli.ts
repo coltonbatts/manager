@@ -6,12 +6,14 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { ensureDir } from '../fs/guard.ts';
 import { DATA_DIR } from '../paths.ts';
-import { checkRequired, LLMError, type LLMProvider, type LLMRequest } from './provider.ts';
+import { checkRequired, LLMError, type LLMCallRecord, type LLMProvider, type LLMRequest } from './provider.ts';
 
 export interface ClaudeCliOptions {
   command: string;
   model: string;
   timeoutSeconds: number;
+  /** Called once per finished call with its token usage. Failures here never affect the call. */
+  onCall?: (call: LLMCallRecord) => void;
 }
 
 interface CliResult {
@@ -19,6 +21,31 @@ interface CliResult {
   is_error?: boolean;
   result?: string;
   structured_output?: unknown;
+  total_cost_usd?: number;
+  duration_ms?: number;
+  modelUsage?: Record<string, {
+    inputTokens?: number; outputTokens?: number; cacheReadInputTokens?: number; cacheCreationInputTokens?: number; costUSD?: number;
+  }>;
+}
+
+/** Token counts and cost from the JSON envelope, or null if the CLI printed no usage. */
+export function parseCallUsage(stdout: string): Omit<LLMCallRecord, 'at' | 'task' | 'ok'> | null {
+  let envelope: CliResult;
+  try { envelope = JSON.parse(stdout) as CliResult; } catch { return null; }
+  const entries = Object.entries(envelope.modelUsage ?? {});
+  if (!entries.length) return null;
+  const sum = (pick: (u: (typeof entries)[number][1]) => number | undefined) => entries.reduce((a, [, u]) => a + (pick(u) ?? 0), 0);
+  // If a call touched several models, attribute it to the one that cost the most.
+  const [model] = entries.reduce((best, e) => ((e[1].costUSD ?? 0) > (best[1].costUSD ?? 0) ? e : best));
+  return {
+    model,
+    input: sum((u) => u.inputTokens),
+    output: sum((u) => u.outputTokens),
+    cacheRead: sum((u) => u.cacheReadInputTokens),
+    cacheWrite: sum((u) => u.cacheCreationInputTokens),
+    costUsd: envelope.total_cost_usd ?? sum((u) => u.costUSD),
+    durationMs: envelope.duration_ms ?? 0,
+  };
 }
 
 export function parseCliOutput(stdout: string): unknown {
@@ -47,6 +74,14 @@ export class ClaudeCliProvider implements LLMProvider {
 
   constructor(opts: ClaudeCliOptions) {
     this.opts = opts;
+  }
+
+  private record(req: LLMRequest, stdout: string, ok: boolean): void {
+    if (!this.opts.onCall) return;
+    try {
+      const usage = parseCallUsage(stdout);
+      if (usage) this.opts.onCall({ at: Date.now(), task: req.task, ok, ...usage });
+    } catch { /* bookkeeping must never break a call */ }
   }
 
   complete<T>(req: LLMRequest): Promise<T> {
@@ -87,13 +122,17 @@ export class ClaudeCliProvider implements LLMProvider {
           reject(new LLMError(`claude -p exited with code ${code}: ${stderr.trim().slice(0, 300)}`));
           return;
         }
+        let outcome: { value: unknown } | { error: unknown };
         try {
           const value = parseCliOutput(stdout);
           checkRequired(value, req.schema);
-          resolve(value as T);
-        } catch (err) {
-          reject(err);
+          outcome = { value };
+        } catch (error) {
+          outcome = { error };
         }
+        this.record(req, stdout, 'value' in outcome);
+        if ('value' in outcome) resolve(outcome.value as T);
+        else reject(outcome.error);
       });
       child.stdin.end(req.prompt);
     });

@@ -14,8 +14,11 @@ import { ROOT } from '../paths.ts';
 import { dailyActivity, lastScan, latestProjects, weeklyActivity } from '../store.ts';
 import { latestPortfolio } from '../understand/portfolio.ts';
 import { getProfile } from '../understand/profile.ts';
+import { getPriorArt, isYoung } from '../understand/prior-art.ts';
+import { getReentryNote } from '../understand/reentry.ts';
 import { localDate } from '../util.ts';
 import { loadConfig } from '../config.ts';
+import { callsByTask } from '../usage/calls.ts';
 import { latestLimits, refreshLimits } from '../usage/limits.ts';
 import { syncTranscripts, usageByDay, usageByModel, usageByProject } from '../usage/transcripts.ts';
 import { usageSection, usageWidget, type UsageView } from './usage-views.ts';
@@ -127,6 +130,11 @@ export function startServer(port: number, opts: { usage?: boolean } = {}): Promi
             report: latestPortfolio(db),
             week: { touched: week.touched, commits: week.commits, shipped: shipped.n },
             scannedAt: lastScan(db)?.finishedAt ?? null,
+            notes: new Set(projects.filter((p) => getReentryNote(db, p)?.fresh).map((p) => p.id)),
+            priorArt: projects
+              .filter((p) => isYoung(db, p))
+              .map((p) => ({ p, result: getPriorArt(db, p.id)?.result }))
+              .filter((x): x is { p: typeof x.p; result: NonNullable<typeof x.result> } => Boolean(x.result?.related.length)),
           }));
         }
         const m = /^\/p\/([a-z0-9-]+)$/.exec(url.pathname);
@@ -139,6 +147,8 @@ export function startServer(port: number, opts: { usage?: boolean } = {}): Promi
             weeks: weeklyActivity(db, 52).get(p.id) ?? new Array(52).fill(0),
             signals: db.prepare('SELECT date, kind, text FROM signals WHERE project_id = ? ORDER BY date DESC').all(p.id) as { date: string; kind: string; text: string }[],
             marks: db.prepare('SELECT date, type, note FROM events WHERE project_id = ? ORDER BY date DESC').all(p.id) as { date: string; type: string; note: string | null }[],
+            note: getReentryNote(db, p),
+            priorArt: getPriorArt(db, p.id)?.result ?? null,
           }));
         }
         if (url.pathname === '/patterns') {
@@ -155,6 +165,7 @@ export function startServer(port: number, opts: { usage?: boolean } = {}): Promi
             days: usageByDay(db, 14),
             projects: usageByProject(db, 7),
             models: usageByModel(db, 7),
+            calls: callsByTask(db, Date.now() - 7 * 86_400_000),
           });
           return page(200, journalPage(entries, recentCheckins(journal, 6), correlate(entries, dailyActivity(db)), url.searchParams.has('saved'), claude));
         }

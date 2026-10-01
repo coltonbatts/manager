@@ -1,4 +1,5 @@
 import { scanCommand } from './commands/scan.ts';
+import { resumeCommand, similarCommand } from './commands/continuity.ts';
 import { checkinCommand, logCommand } from './commands/journal.ts';
 import { markCommand } from './commands/mark.ts';
 import { usageCommand } from './commands/usage.ts';
@@ -13,7 +14,10 @@ const HELP = `manager — a quiet studio manager
   status [--all]     portfolio at a glance
   project <name>     one project in detail, with its profile
                      [--refresh] re-profile · [--offline] facts only
-  report [--force]   profile changed projects, then synthesize the portfolio
+  report [--force]   profile changed projects, write re-entry notes, check new
+                     projects against past work, then synthesize the portfolio
+  resume <project>   where you left off: last session, what's in flight, first step
+  similar <project>  have you built this before? related projects + what to reuse
   patterns           what your history suggests (metrics + hypotheses)
                      [--no-llm] metrics only · [--force] re-run hypotheses
   mark <project> <shipped|paused|abandoned|active> [--date YYYY-MM-DD] [note]
@@ -31,6 +35,8 @@ async function main(argv: string[]): Promise<void> {
     case 'status': return statusCommand(args);
     case 'project': return projectCommand(args);
     case 'report': return reportCommand(args);
+    case 'resume': return resumeCommand(args);
+    case 'similar': return similarCommand(args);
     case 'patterns': return patternsCommand(args);
     case 'mark': return markCommand(args);
     case 'log': return logCommand(args);

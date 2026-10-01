@@ -1,4 +1,4 @@
-import { loadConfig } from '../config.ts';
+import { loadConfig, modelFor } from '../config.ts';
 import { openDb } from '../db.ts';
 import { createProvider } from '../llm/index.ts';
 import { tildify } from '../paths.ts';
@@ -92,7 +92,7 @@ export async function projectCommand(args: string[]): Promise<void> {
     const config = loadConfig();
     if (process.stderr.isTTY) process.stderr.write(dim('  profiling…'));
     try {
-      stored = await generateProfile(db, createProvider(config.llm), config.llm.model, p);
+      stored = await generateProfile(db, createProvider(config.llm, db), modelFor(config.llm, 'profile'), p);
     } catch (err) {
       if (process.stderr.isTTY) process.stderr.write('\r\x1b[K');
       console.log(dim(`  (profile unavailable: ${(err as Error).message})\n`));
