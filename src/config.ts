@@ -17,6 +17,7 @@ export interface Config {
   identities: string[]; // your git author names/emails/GitHub logins
   llm: LLMConfig;
   journal: { shareTextWithLLM: boolean };
+  usage: { refreshMinutes: number; transcriptsDir: string };
 }
 
 export interface LLMConfig {
@@ -38,6 +39,7 @@ interface RawConfig {
   identities?: string[];
   llm?: Partial<LLMConfig>;
   journal?: { shareTextWithLLM?: boolean };
+  usage?: { refreshMinutes?: number; transcriptsDir?: string };
 }
 
 export const CONFIG_PATH = join(ROOT, 'manager.config.json');
@@ -68,5 +70,9 @@ export function normalizeConfig(raw: RawConfig): Config {
     },
     // Journal text stays on this machine unless you opt in; check-ins otherwise only see scores.
     journal: { shareTextWithLLM: raw.journal?.shareTextWithLLM ?? false },
+    usage: {
+      refreshMinutes: raw.usage?.refreshMinutes ?? 5,
+      transcriptsDir: abs(raw.usage?.transcriptsDir ?? '~/.claude/projects'),
+    },
   };
 }

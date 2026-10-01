@@ -52,6 +52,10 @@ src/web/server.ts       node:http on 127.0.0.1; Host/Origin checks; CSP; only wr
 src/web/views.ts        server-rendered pages: / (wall), /p/:id, /patterns, /journal
 src/web/html.ts         escaping html`` tag (interpolations escaped unless raw())
 src/web/style.css       the whole design: paper/ink tokens, one accent, light + dark
+src/web/app.js          the only client script: refreshes the masthead usage gauge from /api/usage
+src/web/usage-views.ts  usage gauges (masthead on every page via <!--usage--> placeholder) + Journal "Claude" section
+src/usage/limits.ts     plan limits from `claude -p /usage` (local command, no model call); parsed + stored in usage_limits
+src/usage/transcripts.ts token counts from ~/.claude/projects/**/*.jsonl, incremental per file; numbers only
 src/commands/*.ts       CLI commands
 test/                   node:test; fixtures go in data/test-tmp via the guard
 ```
@@ -64,6 +68,7 @@ test/                   node:test; fixtures go in data/test-tmp via the guard
 - **State**: active ≤7d, warm ≤30d, cooling ≤90d, dormant >90d.
 - **Identity**: git stats count only commits whose author matches `identities` in the config. Repos with history but none of it yours are `foreign` (clones) and left out of pattern stats.
 - **activity_days**: `git` rows are recomputed from full history every scan. `files` rows (mtime per day) only ever grow, since mtimes move forward. An active day is the union of both.
+- **Claude usage**: `manager serve` refreshes plan limits and transcript totals every `usage.refreshMinutes`. Gauges show fill = % used and a thin mark = % of the window elapsed (5h session, 7d week). Transcripts are a second read root (`usage.transcriptsDir`). Only date/project/model/token counts are extracted, never message content, and none of it goes to the LLM.
 - **Ship evidence**: release tags, launch-like commit subjects (`SHIP_RE` in facts.ts), and manual `manager mark` events.
 - Journal data lives in `data/journal.db`, separate from project data. Journal **text** is sent to the LLM only if `journal.shareTextWithLLM` is true (default false). Check-ins otherwise see only scores and activity.
 - Never write test or demo rows into the real `data/journal.db` or `data/manager.db`. Use `TMP` databases in tests.

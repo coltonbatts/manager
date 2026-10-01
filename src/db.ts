@@ -84,6 +84,35 @@ const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL
   );
   `,
+  `
+  -- Plan limits from claude -p /usage (session / weekly percentages), one row per label per refresh.
+  CREATE TABLE usage_limits (
+    at          INTEGER NOT NULL,
+    label       TEXT NOT NULL,
+    percent     REAL NOT NULL,
+    resets_text TEXT,
+    resets_at   INTEGER
+  );
+  CREATE INDEX usage_limits_at ON usage_limits(at);
+  -- Token counts aggregated from local Claude Code transcripts. Numbers only, never content.
+  CREATE TABLE usage_files (
+    path  TEXT PRIMARY KEY,
+    size  INTEGER NOT NULL,
+    mtime INTEGER NOT NULL
+  );
+  CREATE TABLE usage_file_days (
+    path        TEXT NOT NULL,
+    date        TEXT NOT NULL,
+    project     TEXT NOT NULL,
+    model       TEXT NOT NULL,
+    requests    INTEGER NOT NULL,
+    input       INTEGER NOT NULL,
+    output      INTEGER NOT NULL,
+    cache_read  INTEGER NOT NULL,
+    cache_write INTEGER NOT NULL
+  );
+  CREATE INDEX usage_file_days_date ON usage_file_days(date);
+  `,
 ];
 
 export function openDb(file = join(DATA_DIR, 'manager.db')): DatabaseSync {

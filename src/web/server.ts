@@ -15,16 +15,44 @@ import { dailyActivity, lastScan, latestProjects, weeklyActivity } from '../stor
 import { latestPortfolio } from '../understand/portfolio.ts';
 import { getProfile } from '../understand/profile.ts';
 import { localDate } from '../util.ts';
+import { loadConfig } from '../config.ts';
+import { latestLimits, refreshLimits } from '../usage/limits.ts';
+import { syncTranscripts, usageByDay, usageByModel, usageByProject } from '../usage/transcripts.ts';
+import { usageSection, usageWidget, type UsageView } from './usage-views.ts';
 import { journalPage, notFound, overview, patternsPage, projectPage } from './views.ts';
 
 const CSS_PATH = join(ROOT, 'src', 'web', 'style.css');
+const JS_PATH = join(ROOT, 'src', 'web', 'app.js');
+
+// Usage refresh state, shared by every request. Refreshed on a timer, never per request.
+let usageError: string | null = null;
+
+async function refreshUsage(command: string, transcriptsDir: string): Promise<void> {
+  const db = openDb();
+  try {
+    await refreshLimits(db, command);
+    usageError = null;
+  } catch (err) {
+    usageError = (err as Error).message;
+  }
+  try {
+    await syncTranscripts(db, transcriptsDir);
+  } catch { /* transcripts are best-effort */ }
+  db.close();
+}
+
+function usageView(db: ReturnType<typeof openDb>): UsageView {
+  const last = latestLimits(db);
+  return { at: last?.at ?? null, limits: last?.limits ?? [], error: usageError };
+}
 
 function send(res: ServerResponse, status: number, body: string, type = 'text/html; charset=utf-8'): void {
   res.writeHead(status, {
     'content-type': type,
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
-    'content-security-policy': "default-src 'none'; style-src 'self'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+    // Inline style *attributes* are allowed (gauge widths, stagger delays); inline scripts and <style> blocks are not.
+    'content-security-policy': "default-src 'none'; style-src 'self'; style-src-attr 'unsafe-inline'; script-src 'self'; connect-src 'self'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
   });
   res.end(body);
 }
@@ -44,7 +72,14 @@ function readBody(req: IncomingMessage, limit = 16_384): Promise<string> {
   });
 }
 
-export function startServer(port: number): Promise<{ url: string; close: () => void }> {
+export function startServer(port: number, opts: { usage?: boolean } = {}): Promise<{ url: string; close: () => void }> {
+  let timer: ReturnType<typeof setInterval> | null = null;
+  if (opts.usage) {
+    const config = loadConfig();
+    const tick = () => { void refreshUsage(config.llm.command, config.usage.transcriptsDir); };
+    tick();
+    timer = setInterval(tick, config.usage.refreshMinutes * 60_000);
+  }
   const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
 
   const server = createServer(async (req, res) => {
@@ -68,9 +103,15 @@ export function startServer(port: number): Promise<{ url: string; close: () => v
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'method not allowed', 'text/plain');
 
       if (url.pathname === '/style.css') return send(res, 200, readTextSafe(CSS_PATH) ?? '', 'text/css; charset=utf-8');
+      if (url.pathname === '/app.js') return send(res, 200, readTextSafe(JS_PATH) ?? '', 'text/javascript; charset=utf-8');
 
       const db = openDb();
+      // Every page gets the live usage gauge in its masthead.
+      const page = (status: number, body: string) => send(res, status, body.replace('<!--usage-->', usageWidget(usageView(db)).value));
       try {
+        if (url.pathname === '/api/usage') {
+          return send(res, 200, JSON.stringify({ html: usageWidget(usageView(db)).value }), 'application/json');
+        }
         if (url.pathname === '/') {
           const projects = latestProjects(db);
           const weekly = weeklyActivity(db, 26);
@@ -79,7 +120,7 @@ export function startServer(port: number): Promise<{ url: string; close: () => v
             SELECT count(DISTINCT project_id) AS touched, coalesce(sum(CASE WHEN source = 'git' THEN count END), 0) AS commits
             FROM activity_days WHERE date > ?`).get(weekAgo) as { touched: number; commits: number };
           const shipped = db.prepare('SELECT count(DISTINCT project_id) AS n FROM signals WHERE date > ?').get(weekAgo) as { n: number };
-          return send(res, 200, overview({
+          return page(200, overview({
             projects,
             profiles: new Map(projects.map((p) => [p.id, getProfile(db, p)])),
             weekly,
@@ -91,8 +132,8 @@ export function startServer(port: number): Promise<{ url: string; close: () => v
         const m = /^\/p\/([a-z0-9-]+)$/.exec(url.pathname);
         if (m) {
           const p = latestProjects(db).find((x) => x.id === m[1]);
-          if (!p) return send(res, 404, notFound());
-          return send(res, 200, projectPage({
+          if (!p) return page(404, notFound());
+          return page(200, projectPage({
             p,
             profile: getProfile(db, p),
             weeks: weeklyActivity(db, 52).get(p.id) ?? new Array(52).fill(0),
@@ -104,14 +145,20 @@ export function startServer(port: number): Promise<{ url: string; close: () => v
           const { histories, foreign, noHistory } = loadHistories(db, latestProjects(db));
           const patterns = computePatterns(histories, { foreign, noHistory, snapshotDays: snapshotDays(db) });
           const corr = correlate(allEntries(openJournal()), dailyActivity(db));
-          return send(res, 200, patternsPage(patterns, latestHypotheses(db), corr));
+          return page(200, patternsPage(patterns, latestHypotheses(db), corr));
         }
         if (url.pathname === '/journal') {
           const journal = openJournal();
           const entries = allEntries(journal);
-          return send(res, 200, journalPage(entries, recentCheckins(journal, 6), correlate(entries, dailyActivity(db)), url.searchParams.has('saved')));
+          const claude = usageSection({
+            view: usageView(db),
+            days: usageByDay(db, 14),
+            projects: usageByProject(db, 7),
+            models: usageByModel(db, 7),
+          });
+          return page(200, journalPage(entries, recentCheckins(journal, 6), correlate(entries, dailyActivity(db)), url.searchParams.has('saved'), claude));
         }
-        return send(res, 404, notFound());
+        return page(404, notFound());
       } finally {
         db.close();
       }
@@ -122,6 +169,6 @@ export function startServer(port: number): Promise<{ url: string; close: () => v
 
   return new Promise((resolve, reject) => {
     server.on('error', reject);
-    server.listen(port, '127.0.0.1', () => resolve({ url: `http://127.0.0.1:${port}`, close: () => server.close() }));
+    server.listen(port, '127.0.0.1', () => resolve({ url: `http://127.0.0.1:${port}`, close: () => { if (timer) clearInterval(timer); server.close(); } }));
   });
 }

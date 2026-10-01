@@ -21,6 +21,7 @@ Requires Node ≥ 22.18 (runs TypeScript directly, uses built-in SQLite) and, fo
 | `manager mark <project> shipped\|paused\|abandoned\|active` | record a lifecycle event by hand |
 | `manager log "text" [energy 1–5] [--mood 1–5]` | journal entry. `manager log` alone shows entries |
 | `manager checkin` | 2–4 questions grounded in what the data shows |
-| `manager serve [--port 4747]` | local dashboard on 127.0.0.1 |
+| `manager usage` | Claude plan limits (session / week, with pace) + token usage from local transcripts |
+| `manager serve [--port 4747]` | local dashboard on 127.0.0.1, with a live Claude usage gauge on every page |
 
 Configure roots, excludes, your git identities, models, and journal privacy in `manager.config.json`. All state lives in `./data`. See `CLAUDE.md` for the rules and architecture.

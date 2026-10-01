@@ -1,7 +1,8 @@
 // Read-only filesystem helpers plus the junk and secret rules.
 // Secret files are never listed, never read, and never sent to the LLM.
 
-import { closeSync, existsSync, lstatSync, openSync, readdirSync, readSync, realpathSync } from 'node:fs';
+import { closeSync, createReadStream, existsSync, lstatSync, openSync, readdirSync, readSync, realpathSync } from 'node:fs';
+import { createInterface } from 'node:readline';
 import { join, sep } from 'node:path';
 import { git } from '../git.ts';
 import { isIgnored, parseGitignore, type IgnoreRule } from './gitignore.ts';
@@ -194,4 +195,34 @@ export function realpath(p: string): string {
 
 export function isInside(child: string, parent: string): boolean {
   return child === parent || child.startsWith(parent + sep);
+}
+
+/** Streams a (possibly large) text file line by line. Refuses secret-like paths. */
+export async function* readLines(p: string): AsyncGenerator<string> {
+  if (isSecretPath(p)) throw new SecretFileError(p);
+  const real = realpathSync(p);
+  if (isSecretPath(real)) throw new SecretFileError(p);
+  const rl = createInterface({ input: createReadStream(real, { encoding: 'utf8' }), crlfDelay: Infinity });
+  try {
+    for await (const line of rl) yield line;
+  } finally {
+    rl.close();
+  }
+}
+
+/** Recursively lists files with a given extension (no symlinks followed). */
+export function findFiles(dir: string, ext: string, out: { path: string; size: number; mtimeMs: number }[] = []): typeof out {
+  let entries;
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+  for (const e of entries) {
+    const abs = join(dir, e.name);
+    if (e.isDirectory()) findFiles(abs, ext, out);
+    else if (e.isFile() && e.name.endsWith(ext) && !isSecretName(e.name)) {
+      try {
+        const st = lstatSync(abs);
+        out.push({ path: abs, size: st.size, mtimeMs: st.mtimeMs });
+      } catch { /* vanished */ }
+    }
+  }
+  return out;
 }

@@ -36,11 +36,12 @@ export function layout(title: string, nav: Nav, body: Html): string {
   <header class="mast">
     <a class="mark" href="/">Manager · Alternative Design</a>
     <nav>${navLink('/', 'wall', 'Wall')}${navLink('/patterns', 'patterns', 'Patterns')}${navLink('/journal', 'journal', 'Journal')}</nav>
-    <span>${today()}</span>
+    ${raw('<!--usage-->')}
   </header>
   ${body}
-  <footer>Local only. Read-only toward your projects. Data lives in ~/MANAGER/data.</footer>
+  <footer>${today()} · Local only. Read-only toward your projects. Data lives in ~/MANAGER/data.</footer>
 </div>
+<script src="/app.js" defer></script>
 </body>
 </html>`.value;
 }
@@ -315,7 +316,7 @@ function correlationBlock(corr: CorrelationReport): Html {
     <p class="caveat">Observations, not diagnoses. With ${corr.checked} comparisons, expect some to be chance.</p>`;
 }
 
-export function journalPage(entries: Entry[], checkins: Checkin[], corr: CorrelationReport, saved: boolean): string {
+export function journalPage(entries: Entry[], checkins: Checkin[], corr: CorrelationReport, saved: boolean, claude: Html | string = ''): string {
   const scale = (name: string) => html`<div class="scale"><span>${name}</span>${[1, 2, 3, 4, 5].map((n) =>
     html`<input type="radio" name="${name}" id="${name}${n}" value="${n}"><label for="${name}${n}">${n}</label>`)}</div>`;
   const when = (at: number) => new Date(at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -333,6 +334,8 @@ export function journalPage(entries: Entry[], checkins: Checkin[], corr: Correla
       </form>
       <p class="private">Stored only in data/journal.db on this machine, separate from project data.</p>
     </section>
+
+    ${claude}
 
     <section>
       <h2 class="label">Entries <span class="n">${entries.length}</span></h2>

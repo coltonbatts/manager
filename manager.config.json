@@ -22,5 +22,9 @@
   },
   "journal": {
     "shareTextWithLLM": false
+  },
+  "usage": {
+    "refreshMinutes": 5,
+    "transcriptsDir": "~/.claude/projects"
   }
 }
