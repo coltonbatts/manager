@@ -36,6 +36,13 @@ src/scan/discover.ts    roots → candidate projects
 src/scan/facts.ts       cheap per-project facts (no LLM)
 src/scan/scan.ts        runScan: discover → facts → snapshot
 src/store.ts            read-side queries (CLI + dashboard)
+src/util.ts             pool() concurrency helper
+src/llm/provider.ts     LLMProvider interface (swap point)
+src/llm/claude-cli.ts   claude -p implementation (no tools, no MCP, stdin prompt, timeout)
+src/understand/digest.ts   per-project text the LLM sees (facts, commits, tree, README excerpts)
+src/understand/redact.ts   credential scrubber applied to every digest
+src/understand/profile.ts  per-project profiles, cached by snapshot fingerprint → data/profiles/*.md
+src/understand/portfolio.ts portfolio synthesis, cached by input hash → data/reports/*.md
 src/commands/*.ts       CLI commands
 test/                   node:test; fixtures go in data/test-tmp via the guard
 ```
@@ -51,6 +58,8 @@ test/                   node:test; fixtures go in data/test-tmp via the guard
 ## Conventions
 
 - Commands: `npm test`, `npm run typecheck`, `./bin/manager.js <cmd>`.
+- Tests never call the real LLM. Use a fake `LLMProvider`. Test fixtures go in `TMP` from `test/helpers.ts` (one dir per test process). Scan fixtures with `scanFixture`, which overrides discovery's self-exclusion.
+- `claude -p` hangs (it retries silently) when the CLI's OAuth login has expired. The provider times out with a hint to `/login`.
 - Terminal tone is quiet: dim and bold, no color, no emoji.
 - Scientist / therapist output must state sample sizes and uncertainty, and never over-claim from thin data.
 - Commit after each slice.
@@ -58,7 +67,7 @@ test/                   node:test; fixtures go in data/test-tmp via the guard
 ## Build slices
 
 1. ✅ config + guard + scan + status (+ basic `project`)
-2. per-project LLM profiles via `claude -p`, cached by fingerprint; `report`
+2. ✅ per-project LLM profiles via `claude -p`, cached by fingerprint; `report`
 3. git-history backfill + snapshots over time + `patterns`
 4. `checkin` + `log` (journal)
 5. local dashboard (`serve`)

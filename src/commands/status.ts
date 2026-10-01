@@ -1,7 +1,10 @@
+import { loadConfig } from '../config.ts';
 import { openDb } from '../db.ts';
+import { createProvider } from '../llm/index.ts';
 import { tildify } from '../paths.ts';
 import type { Facts } from '../scan/facts.ts';
 import { findProject, lastScan, latestProjects, type ProjectView, type State } from '../store.ts';
+import { generateProfile, getProfile, type StoredProfile } from '../understand/profile.ts';
 import { ago, bold, bytes, dim, pad, plural } from '../ui.ts';
 
 const ORDER: State[] = ['active', 'warm', 'cooling', 'dormant', 'unknown'];
@@ -62,8 +65,10 @@ export function statusCommand(args: string[]): void {
   }
 }
 
-export function projectCommand(args: string[]): void {
-  const query = args.join(' ').trim();
+export async function projectCommand(args: string[]): Promise<void> {
+  const refresh = args.includes('--refresh');
+  const offline = args.includes('--offline');
+  const query = args.filter((a) => !a.startsWith('--')).join(' ').trim();
   if (!query) {
     console.log('Usage: manager project <name>');
     return;
@@ -80,6 +85,28 @@ export function projectCommand(args: string[]): void {
   const line = (k: string, v: string) => console.log(`  ${dim(pad(k, 12))}${v}`);
   console.log(`\n${bold(p.name)}  ${dim(p.state)}`);
   console.log(dim(`  ${tildify(p.path)}\n`));
+
+  let stored: StoredProfile | null = getProfile(db, p);
+  if (!offline && (refresh || !stored?.fresh)) {
+    const config = loadConfig();
+    if (process.stderr.isTTY) process.stderr.write(dim('  profiling…'));
+    try {
+      stored = await generateProfile(db, createProvider(config.llm), config.llm.model, p);
+    } catch (err) {
+      if (process.stderr.isTTY) process.stderr.write('\r\x1b[K');
+      console.log(dim(`  (profile unavailable: ${(err as Error).message})\n`));
+    }
+    if (process.stderr.isTTY) process.stderr.write('\r\x1b[K');
+  }
+  if (stored) {
+    const pr = stored.profile;
+    console.log(`  ${pr.summary}\n`);
+    console.log(`  ${dim('now')}   ${pr.currentState}`);
+    console.log(`  ${dim('next')}  ${pr.nextStep}`);
+    for (const r of pr.risks) console.log(`  ${dim('risk')}  ${r}`);
+    console.log(dim(`\n  ${pr.category} · ${pr.stage} · ${pr.closeness} · ${pr.confidence} confidence · profiled ${ago(stored.generatedAt)}${stored.fresh ? '' : ' (stale)'}\n`));
+  }
+
   line('kind', p.kind);
   if (f.stack.length) line('stack', f.stack.join(', '));
   const langs = topLanguages(f, 4);

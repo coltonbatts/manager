@@ -11,5 +11,12 @@
   "exclude": [],
   "discoveryDepth": 3,
   "skipDirs": [],
-  "maxFilesPerProject": 20000
+  "maxFilesPerProject": 20000,
+  "llm": {
+    "command": "claude",
+    "model": "sonnet",
+    "reportModel": "opus",
+    "timeoutSeconds": 180,
+    "concurrency": 3
+  }
 }

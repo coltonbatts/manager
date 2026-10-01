@@ -4,6 +4,7 @@ import { localDate } from '../db.ts';
 import type { DatabaseSync } from '../fs/guard.ts';
 import { discover, isCodeProject, type Candidate } from './discover.ts';
 import { gatherFacts, type Facts } from './facts.ts';
+import { pool } from '../util.ts';
 
 export interface ScanResult {
   project: ProjectRow;
@@ -42,23 +43,16 @@ function assignIds(db: DatabaseSync, candidates: Candidate[]): Map<string, strin
   return ids;
 }
 
-async function pool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.min(size, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      out[i] = await fn(items[i]);
-    }
-  });
-  await Promise.all(workers);
-  return out;
+export interface ScanOptions {
+  onProgress?: (done: number, total: number) => void;
+  /** Manager's own dir, never scanned. Tests override it because their fixtures live inside it. */
+  self?: string;
 }
 
-export async function runScan(db: DatabaseSync, config: Config, onProgress?: (done: number, total: number) => void): Promise<ScanResult[]> {
+export async function runScan(db: DatabaseSync, config: Config, { onProgress, self }: ScanOptions = {}): Promise<ScanResult[]> {
   const now = Date.now();
   const scanId = Number(db.prepare('INSERT INTO scans (started_at) VALUES (?)').run(now).lastInsertRowid);
-  const candidates = discover(config);
+  const candidates = discover(config, self ? { self } : {});
   const ids = assignIds(db, candidates);
 
   let done = 0;

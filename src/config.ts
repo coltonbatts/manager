@@ -14,6 +14,16 @@ export interface Config {
   discoveryDepth: number;
   skipDirs: Set<string>;
   maxFilesPerProject: number;
+  llm: LLMConfig;
+}
+
+export interface LLMConfig {
+  provider: 'claude-cli';
+  command: string;
+  model: string; // per-project profiles
+  reportModel: string; // portfolio synthesis, patterns, check-ins
+  timeoutSeconds: number;
+  concurrency: number;
 }
 
 interface RawConfig {
@@ -23,6 +33,7 @@ interface RawConfig {
   discoveryDepth?: number;
   skipDirs?: string[];
   maxFilesPerProject?: number;
+  llm?: Partial<LLMConfig>;
 }
 
 export const CONFIG_PATH = join(ROOT, 'manager.config.json');
@@ -42,5 +53,13 @@ export function normalizeConfig(raw: RawConfig): Config {
     discoveryDepth: raw.discoveryDepth ?? 3,
     skipDirs: new Set(raw.skipDirs ?? []),
     maxFilesPerProject: raw.maxFilesPerProject ?? 20_000,
+    llm: {
+      provider: 'claude-cli',
+      command: raw.llm?.command ?? 'claude',
+      model: raw.llm?.model ?? 'sonnet',
+      reportModel: raw.llm?.reportModel ?? 'opus',
+      timeoutSeconds: raw.llm?.timeoutSeconds ?? 180,
+      concurrency: raw.llm?.concurrency ?? 3,
+    },
   };
 }

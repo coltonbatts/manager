@@ -11,7 +11,7 @@ export async function scanCommand(): Promise<void> {
   const progress = process.stderr.isTTY
     ? (done: number, total: number) => process.stderr.write(`\r${dim(`scanning ${done}/${total}`)}`)
     : undefined;
-  const results = await runScan(db, config, progress);
+  const results = await runScan(db, config, { onProgress: progress });
   if (progress) process.stderr.write('\r\x1b[K');
 
   const counts: Record<string, number> = {};

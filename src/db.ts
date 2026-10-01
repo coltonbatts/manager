@@ -38,6 +38,25 @@ const MIGRATIONS: string[] = [
     project_count INTEGER
   );
   `,
+  `
+  -- One profile per project per fingerprint; the newest is current.
+  CREATE TABLE profiles (
+    project_id   TEXT NOT NULL REFERENCES projects(id),
+    fingerprint  TEXT NOT NULL,
+    generated_at INTEGER NOT NULL,
+    model        TEXT NOT NULL,
+    json         TEXT NOT NULL,
+    PRIMARY KEY (project_id, fingerprint)
+  );
+  CREATE TABLE reports (
+    id           INTEGER PRIMARY KEY,
+    kind         TEXT NOT NULL,            -- 'portfolio' (later: 'patterns')
+    input_hash   TEXT NOT NULL,
+    generated_at INTEGER NOT NULL,
+    model        TEXT NOT NULL,
+    json         TEXT NOT NULL
+  );
+  `,
 ];
 
 export function openDb(file = join(DATA_DIR, 'manager.db')): DatabaseSync {
