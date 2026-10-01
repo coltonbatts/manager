@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "manager",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--disable-warning=ExperimentalWarning", "src/cli.ts", "serve", "--port", "4747"],
+      "port": 4747
+    }
+  ]
+}

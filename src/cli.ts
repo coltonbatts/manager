@@ -1,6 +1,7 @@
 import { scanCommand } from './commands/scan.ts';
 import { checkinCommand, logCommand } from './commands/journal.ts';
 import { markCommand } from './commands/mark.ts';
+import { startServer } from './web/server.ts';
 import { patternsCommand } from './commands/patterns.ts';
 import { reportCommand } from './commands/report.ts';
 import { projectCommand, statusCommand } from './commands/status.ts';
@@ -18,7 +19,7 @@ const HELP = `manager — a quiet studio manager
   checkin            a short reflective check-in (2–4 questions from your data)
   log "text" [1-5]   journal entry; trailing number = energy · [--mood 1-5]
   log                recent entries + energy/mood vs. activity
-  serve              local dashboard                (slice 5)
+  serve [--port N]   local dashboard on 127.0.0.1 (default port 4747)
 `;
 
 async function main(argv: string[]): Promise<void> {
@@ -32,6 +33,13 @@ async function main(argv: string[]): Promise<void> {
     case 'mark': return markCommand(args);
     case 'log': return logCommand(args);
     case 'checkin': return checkinCommand();
+    case 'serve': {
+      const i = args.indexOf('--port');
+      const port = i >= 0 ? Number(args[i + 1]) : 4747;
+      const { url } = await startServer(port);
+      console.log(`Manager is on the wall at ${url}  (ctrl-c to stop)`);
+      return;
+    }
     case undefined:
     case 'help':
     case '--help':
@@ -39,10 +47,6 @@ async function main(argv: string[]): Promise<void> {
       console.log(HELP);
       return;
     default:
-      if (['serve'].includes(cmd)) {
-        console.log(`\`manager ${cmd}\` isn't built yet.`);
-        return;
-      }
       console.error(`Unknown command: ${cmd}\n\n${HELP}`);
       process.exitCode = 1;
   }

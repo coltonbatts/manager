@@ -2,6 +2,7 @@
 
 import type { DatabaseSync } from './fs/guard.ts';
 import type { Facts } from './scan/facts.ts';
+import { localDate } from './util.ts';
 
 export type State = 'active' | 'warm' | 'cooling' | 'dormant' | 'unknown';
 
@@ -77,4 +78,23 @@ export function dailyActivity(db: DatabaseSync): Map<string, { projects: number;
     SELECT date, count(DISTINCT project_id) AS projects, coalesce(sum(CASE WHEN source = 'git' THEN count END), 0) AS commits
     FROM activity_days GROUP BY date`).all() as { date: string; projects: number; commits: number }[];
   return new Map(rows.map((r) => [r.date, { projects: r.projects, commits: r.commits }]));
+}
+
+/** Active days per Monday-start week for the last `weeks` weeks, oldest first, keyed by project id. */
+export function weeklyActivity(db: DatabaseSync, weeks: number, now = Date.now()): Map<string, number[]> {
+  const DAYMS = 86_400_000;
+  const today = new Date(now);
+  const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7), 12).getTime();
+  const start = monday - (weeks - 1) * 7 * DAYMS;
+  const rows = db.prepare('SELECT DISTINCT project_id, date FROM activity_days WHERE date >= ?').all(localDate(start)) as
+    { project_id: string; date: string }[];
+  const out = new Map<string, number[]>();
+  for (const r of rows) {
+    const i = Math.floor((new Date(`${r.date}T12:00:00`).getTime() - start) / (7 * DAYMS));
+    if (i < 0 || i >= weeks) continue;
+    const arr = out.get(r.project_id) ?? new Array(weeks).fill(0);
+    arr[i]++;
+    out.set(r.project_id, arr);
+  }
+  return out;
 }

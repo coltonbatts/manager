@@ -77,3 +77,10 @@ export async function formHypotheses(
     .run(hash, generatedAt, model, JSON.stringify(report));
   return { report, generatedAt, cached: false };
 }
+
+/** The most recent hypotheses, without calling the LLM (for the dashboard). */
+export function latestHypotheses(db: DatabaseSync): { report: PatternsReport; generatedAt: number } | null {
+  const r = db.prepare("SELECT json, generated_at FROM reports WHERE kind = 'patterns' ORDER BY id DESC LIMIT 1").get() as
+    { json: string; generated_at: number } | undefined;
+  return r ? { report: JSON.parse(r.json) as PatternsReport, generatedAt: r.generated_at } : null;
+}

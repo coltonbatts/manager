@@ -18,7 +18,7 @@ A local studio manager for Colton (Alternative Design). It watches the project f
 
 - Node ≥ 22.18 runs `.ts` directly (type stripping), so there's **no build step**. Use only erasable syntax: no enums, no namespaces, no parameter properties, `import type` for types, and `.ts` extensions in imports.
 - `node:sqlite` (built in), `node:test` (built in). Dev deps are only `typescript` and `@types/node`.
-- The dashboard (slice 5) is HTML rendered by a `node:http` server bound to 127.0.0.1, plus one CSS file. No React, no bundler.
+- The dashboard is HTML rendered by a `node:http` server bound to 127.0.0.1, plus one CSS file. No React, no bundler.
 
 ## Layout
 
@@ -48,6 +48,10 @@ src/patterns/hypotheses.ts LLM hypotheses over the metrics, with evidence, alter
 src/journal/journal.ts     data/journal.db (entries, checkins). Separate from manager.db
 src/journal/correlate.ts   energy/mood vs. activity (silent below MIN_DAYS scored days; |r| ≥ 0.3 only)
 src/journal/checkin.ts     check-in context, LLM questions, rule-based fallback questions
+src/web/server.ts       node:http on 127.0.0.1; Host/Origin checks; CSP; only write = journal entry POST
+src/web/views.ts        server-rendered pages: / (wall), /p/:id, /patterns, /journal
+src/web/html.ts         escaping html`` tag (interpolations escaped unless raw())
+src/web/style.css       the whole design: paper/ink tokens, one accent, light + dark
 src/commands/*.ts       CLI commands
 test/                   node:test; fixtures go in data/test-tmp via the guard
 ```
@@ -66,7 +70,7 @@ test/                   node:test; fixtures go in data/test-tmp via the guard
 
 ## Conventions
 
-- Commands: `npm test`, `npm run typecheck`, `./bin/manager.js <cmd>`.
+- Commands: `npm test`, `npm run typecheck`, `./bin/manager.js <cmd>`. Preview the dashboard with `.claude/launch.json` (`manager`, port 4747).
 - Tests never call the real LLM. Use a fake `LLMProvider`. Test fixtures go in `TMP` from `test/helpers.ts` (one dir per test process). Scan fixtures with `scanFixture`, which overrides discovery's self-exclusion.
 - `claude -p` hangs (it retries silently) when the CLI's OAuth login has expired. The provider times out with a hint to `/login`.
 - Terminal tone is quiet: dim and bold, no color, no emoji.
@@ -79,4 +83,8 @@ test/                   node:test; fixtures go in data/test-tmp via the guard
 2. ✅ per-project LLM profiles via `claude -p`, cached by fingerprint; `report`
 3. ✅ git-history backfill + snapshots over time + `patterns` + `mark`
 4. ✅ `checkin` + `log` (journal)
-5. local dashboard (`serve`)
+5. ✅ local dashboard (`serve`)
+
+## Dashboard design
+
+A quiet studio wall, not an admin panel. Typography-led (Iowan Old Style / Charter serif, system mono for data), paper-and-ink palette with one muted vermilion accent reserved for "recent" and "needs attention". No gradients, no web fonts or CDNs (local-first), no client JS. Motion is one staggered fade-in, disabled under reduced-motion. Dormant projects appear as a colophon list, not cards. The dashboard never calls the LLM; it shows the latest cached reports.
