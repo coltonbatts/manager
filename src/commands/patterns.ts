@@ -1,6 +1,7 @@
 import { loadConfig } from '../config.ts';
 import { openDb } from '../db.ts';
 import { createProvider } from '../llm/index.ts';
+import { printCorrelations } from './journal.ts';
 import { formHypotheses } from '../patterns/hypotheses.ts';
 import { computePatterns, loadHistories, snapshotDays, type Patterns } from '../patterns/metrics.ts';
 import { lastScan, latestProjects } from '../store.ts';
@@ -68,6 +69,7 @@ export async function patternsCommand(args: string[]): Promise<void> {
   const { histories, foreign, noHistory } = loadHistories(db, latestProjects(db));
   const patterns = computePatterns(histories, { foreign, noHistory, snapshotDays: snapshotDays(db) });
   printMetrics(patterns);
+  printCorrelations();
   if (args.includes('--no-llm')) return;
 
   const config = loadConfig();

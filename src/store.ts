@@ -70,3 +70,11 @@ export function lastScan(db: DatabaseSync): { finishedAt: number; projectCount: 
     { finished_at: number; project_count: number } | undefined;
   return r ? { finishedAt: r.finished_at, projectCount: r.project_count } : null;
 }
+
+/** Per local day: distinct projects touched (commits or file edits) and your commit count. */
+export function dailyActivity(db: DatabaseSync): Map<string, { projects: number; commits: number }> {
+  const rows = db.prepare(`
+    SELECT date, count(DISTINCT project_id) AS projects, coalesce(sum(CASE WHEN source = 'git' THEN count END), 0) AS commits
+    FROM activity_days GROUP BY date`).all() as { date: string; projects: number; commits: number }[];
+  return new Map(rows.map((r) => [r.date, { projects: r.projects, commits: r.commits }]));
+}

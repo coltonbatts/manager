@@ -16,6 +16,7 @@ export interface Config {
   maxFilesPerProject: number;
   identities: string[]; // your git author names/emails/GitHub logins
   llm: LLMConfig;
+  journal: { shareTextWithLLM: boolean };
 }
 
 export interface LLMConfig {
@@ -36,6 +37,7 @@ interface RawConfig {
   maxFilesPerProject?: number;
   identities?: string[];
   llm?: Partial<LLMConfig>;
+  journal?: { shareTextWithLLM?: boolean };
 }
 
 export const CONFIG_PATH = join(ROOT, 'manager.config.json');
@@ -64,5 +66,7 @@ export function normalizeConfig(raw: RawConfig): Config {
       timeoutSeconds: raw.llm?.timeoutSeconds ?? 180,
       concurrency: raw.llm?.concurrency ?? 3,
     },
+    // Journal text stays on this machine unless you opt in; check-ins otherwise only see scores.
+    journal: { shareTextWithLLM: raw.journal?.shareTextWithLLM ?? false },
   };
 }

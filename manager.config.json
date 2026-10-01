@@ -19,5 +19,8 @@
     "reportModel": "opus",
     "timeoutSeconds": 180,
     "concurrency": 3
+  },
+  "journal": {
+    "shareTextWithLLM": false
   }
 }
