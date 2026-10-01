@@ -57,6 +57,33 @@ const MIGRATIONS: string[] = [
     json         TEXT NOT NULL
   );
   `,
+  `
+  -- Dated activity, backfilled from full git history (source 'git') or file mtimes (source 'files').
+  CREATE TABLE activity_days (
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    date       TEXT NOT NULL,
+    source     TEXT NOT NULL,
+    count      INTEGER NOT NULL,
+    PRIMARY KEY (project_id, date, source)
+  );
+  -- Evidence that something shipped: release tags and launch-like commit subjects.
+  CREATE TABLE signals (
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    date       TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    text       TEXT NOT NULL
+  );
+  CREATE INDEX signals_project ON signals(project_id);
+  -- Lifecycle marks made by hand: manager mark <project> shipped|paused|abandoned|active
+  CREATE TABLE events (
+    id         INTEGER PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    date       TEXT NOT NULL,
+    type       TEXT NOT NULL,
+    note       TEXT,
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 export function openDb(file = join(DATA_DIR, 'manager.db')): DatabaseSync {
@@ -72,7 +99,4 @@ export function openDb(file = join(DATA_DIR, 'manager.db')): DatabaseSync {
   return db;
 }
 
-export function localDate(ms = Date.now()): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+export { localDate } from './util.ts';

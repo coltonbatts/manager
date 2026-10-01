@@ -120,7 +120,7 @@ describe('scanner ignore rules', () => {
 
   it('counts TODO/FIXME only in readable, non-secret files', async () => {
     const dir = fixture('todos', { 'a.ts': '// TODO x\n// FIXME y', 'b.md': 'TODO', '.env': 'TODO=leak', 'img.png': 'TODO' });
-    const facts = await gatherFacts({ path: dir, name: 'todos', root: dir, isGit: false }, true, { maxFiles: 100, skipDirs: new Set() });
+    const facts = await gatherFacts({ path: dir, name: 'todos', root: dir, isGit: false }, true, { maxFiles: 100, skipDirs: new Set(), identities: [] });
     assert.equal(facts.todoCount, 3);
   });
 });

@@ -34,7 +34,8 @@ function signal(f: Facts): string {
     if (f.git.commits30) bits.push(`${f.git.commits30} commits/30d`);
     const dirty = f.git.modified + f.git.untracked;
     if (dirty) bits.push(`${dirty} uncommitted`);
-    if (!f.git.commitCount) bits.push('no commits');
+    if (f.git.foreign) bits.push(`someone else's repo (${f.git.othersCommitCount} commits)`);
+    else if (!f.git.commitCount) bits.push('no commits');
   } else if (f.touched30) {
     bits.push(`${plural(f.touched30, 'file')} touched/30d`);
   }
@@ -114,7 +115,7 @@ export async function projectCommand(args: string[]): Promise<void> {
   line('last active', ago(f.lastActivityAt));
   if (f.git) {
     line('branch', `${f.git.branch ?? '—'}${f.git.hasRemote ? '' : dim('  (no remote)')}`);
-    line('commits', `${f.git.commitCount} total · ${f.git.commits7} this week · ${f.git.commits30} this month`);
+    line('commits', `${f.git.commitCount} yours · ${f.git.commits7} this week · ${f.git.commits30} this month${f.git.othersCommitCount ? dim(` · ${f.git.othersCommitCount} by others`) : ''}`);
     if (f.git.firstCommitAt) line('started', ago(f.git.firstCommitAt));
     line('uncommitted', `${f.git.modified} modified · ${f.git.untracked} untracked`);
     if (f.git.tagCount) line('tags', String(f.git.tagCount));

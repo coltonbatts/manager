@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { git } from '../git.ts';
 import { listFiles, readTextSafe, type FileEntry } from '../fs/read.ts';
+import { localDate } from '../util.ts';
 import type { Candidate } from './discover.ts';
 
 export type Kind = 'code' | 'creative' | 'notes' | 'mixed';
@@ -12,7 +13,9 @@ export type Kind = 'code' | 'creative' | 'notes' | 'mixed';
 export interface GitFacts {
   branch: string | null;
   head: string | null;
-  commitCount: number;
+  commitCount: number; // all counts below are YOUR commits (see config.identities)
+  othersCommitCount: number; // commits by anyone else
+  foreign: boolean; // has history, none of it yours (a clone of someone else's repo)
   firstCommitAt: number | null; // ms
   lastCommitAt: number | null; // ms
   commits7: number;
@@ -23,6 +26,15 @@ export interface GitFacts {
   hasRemote: boolean;
   tagCount: number;
 }
+
+/** Dated activity derived during a scan. Stored in activity_days / signals, not in facts_json. */
+export interface History {
+  days: { date: string; source: 'git' | 'files'; count: number }[];
+  signals: { date: string; kind: 'tag' | 'commit'; text: string }[];
+}
+
+// Commit subjects that suggest something shipped. Deliberately conservative; "pre-launch" doesn't count.
+const SHIP_RE = /(?<!pre-?)\b(launch(ed)?|ship(ped)?|go(ing)?[- ]live|went live|released?|v1\.0(\.0)?|deploy(ed)? to prod(uction)?|publish(ed)?)\b/i;
 
 export interface Facts {
   kind: Kind;
@@ -67,22 +79,52 @@ function ext(rel: string): string {
   return i > 0 ? name.slice(i + 1).toLowerCase() : '';
 }
 
-async function gitFacts(dir: string, now: number): Promise<GitFacts> {
+/** Matches a commit author against configured identities (names, emails, or GitHub noreply logins). */
+export function makeIsMine(identities: string[]): (name: string, email: string) => boolean {
+  const ids = new Set(identities.map((i) => i.toLowerCase()));
+  if (!ids.size) return () => true; // no identities configured: everything counts
+  return (name, email) => {
+    const e = email.toLowerCase();
+    const login = /^(?:\d+\+)?([^@]+)@users\.noreply\.github\.com$/.exec(e)?.[1];
+    return ids.has(name.toLowerCase()) || ids.has(e) || (login !== undefined && ids.has(login));
+  };
+}
+
+async function gitFacts(dir: string, now: number, history: History, isMine: (name: string, email: string) => boolean): Promise<GitFacts> {
   const [head, branch, log, status, remote, tags] = await Promise.all([
     git(dir, ['rev-parse', 'HEAD']),
     git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']),
-    git(dir, ['log', '--format=%ct']),
+    git(dir, ['log', '--branches', '--format=%ct%x09%an%x09%ae%x09%s']),
     git(dir, ['status', '--porcelain=v1']),
     git(dir, ['remote']),
-    git(dir, ['tag', '--list']),
+    git(dir, ['for-each-ref', '--format=%(creatordate:unix)%09%(refname:short)', 'refs/tags']),
   ]);
-  const times = (log ?? '').split('\n').filter(Boolean).map((t) => Number(t) * 1000);
+  const all = (log ?? '').split('\n').filter(Boolean).map((l) => {
+    const [at, name, email, ...subject] = l.split('\t');
+    return { at: Number(at) * 1000, mine: isMine(name ?? '', email ?? ''), subject: subject.join('\t') };
+  });
+  const commits = all.filter((c) => c.mine);
+  const times = commits.map((c) => c.at);
+  const perDay = new Map<string, number>();
+  for (const c of commits) {
+    const d = localDate(c.at);
+    perDay.set(d, (perDay.get(d) ?? 0) + 1);
+    if (SHIP_RE.test(c.subject)) history.signals.push({ date: d, kind: 'commit', text: c.subject.slice(0, 160) });
+  }
+  for (const [date, count] of perDay) history.days.push({ date, source: 'git', count });
+  const tagLines = (tags ?? '').split('\n').filter(Boolean);
+  if (commits.length) for (const t of tagLines) {
+    const [at, name] = t.split('\t');
+    if (Number(at)) history.signals.push({ date: localDate(Number(at) * 1000), kind: 'tag', text: name });
+  }
   const statusLines = (status ?? '').split('\n').filter(Boolean);
   const within = (days: number) => times.filter((t) => now - t <= days * DAY).length;
   return {
     branch: branch?.trim() || null,
     head: head?.trim() || null,
     commitCount: times.length,
+    othersCommitCount: all.length - commits.length,
+    foreign: all.length > 0 && commits.length === 0,
     firstCommitAt: times.length ? Math.min(...times) : null,
     lastCommitAt: times.length ? Math.max(...times) : null,
     commits7: within(7),
@@ -91,7 +133,7 @@ async function gitFacts(dir: string, now: number): Promise<GitFacts> {
     modified: statusLines.filter((l) => !l.startsWith('??')).length,
     untracked: statusLines.filter((l) => l.startsWith('??')).length,
     hasRemote: Boolean(remote?.trim()),
-    tagCount: (tags ?? '').split('\n').filter(Boolean).length,
+    tagCount: tagLines.length,
   };
 }
 
@@ -145,9 +187,22 @@ function classify(isCode: boolean, files: FileEntry[], languages: Record<string,
   return 'mixed';
 }
 
-export async function gatherFacts(c: Candidate, isCode: boolean, opts: { maxFiles: number; skipDirs: Set<string> }, now = Date.now()): Promise<Facts> {
+export interface ScanFactOptions {
+  maxFiles: number;
+  skipDirs: Set<string>;
+  identities: string[];
+}
+
+export async function gatherFacts(c: Candidate, isCode: boolean, opts: ScanFactOptions, now = Date.now()): Promise<Facts> {
+  return (await gatherFactsAndHistory(c, isCode, opts, now)).facts;
+}
+
+export async function gatherFactsAndHistory(
+  c: Candidate, isCode: boolean, opts: ScanFactOptions, now = Date.now(),
+): Promise<{ facts: Facts; history: History }> {
+  const history: History = { days: [], signals: [] };
   const [gf, list] = await Promise.all([
-    c.isGit ? gitFacts(c.path, now) : Promise.resolve(null),
+    c.isGit ? gitFacts(c.path, now, history, makeIsMine(opts.identities)) : Promise.resolve(null),
     listFiles(c.path, c.isGit, { maxFiles: opts.maxFiles, skipDirs: opts.skipDirs }),
   ]);
   const files = list.files;
@@ -186,6 +241,7 @@ export async function gatherFacts(c: Candidate, isCode: boolean, opts: { maxFile
 
   // For clean git repos, file mtimes mostly reflect checkouts, so trust the last commit.
   const dirty = gf ? gf.modified + gf.untracked : 0;
+  // A foreign repo's own history says nothing about you; fall back to file activity.
   const lastActivityAt = gf && gf.lastCommitAt !== null && dirty === 0
     ? gf.lastCommitAt
     : Math.max(gf?.lastCommitAt ?? 0, newestMtime ?? 0) || null;
@@ -195,7 +251,18 @@ export async function gatherFacts(c: Candidate, isCode: boolean, opts: { maxFile
     .digest('hex')
     .slice(0, 16);
 
-  return {
+  // File mtimes are dated evidence of touching a project, git or not. It's a lower bound: each file
+  // keeps only its latest mtime. For git repos, commits stay the primary signal.
+  {
+    const perDay = new Map<string, number>();
+    for (const f of files) {
+      const d = localDate(f.mtimeMs);
+      perDay.set(d, (perDay.get(d) ?? 0) + 1);
+    }
+    for (const [date, count] of perDay) history.days.push({ date, source: 'files', count });
+  }
+
+  const facts: Facts = {
     kind: classify(isCode, files, languages, media),
     git: gf,
     fileCount: files.length,
@@ -212,4 +279,5 @@ export async function gatherFacts(c: Candidate, isCode: boolean, opts: { maxFile
     lastActivityAt,
     fingerprint,
   };
+  return { facts, history };
 }

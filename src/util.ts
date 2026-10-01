@@ -11,3 +11,9 @@ export async function pool<T, R>(items: T[], size: number, fn: (item: T) => Prom
   await Promise.all(workers);
   return out;
 }
+
+/** YYYY-MM-DD in local time. */
+export function localDate(ms = Date.now()): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}

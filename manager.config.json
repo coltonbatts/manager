@@ -12,6 +12,7 @@
   "discoveryDepth": 3,
   "skipDirs": [],
   "maxFilesPerProject": 20000,
+  "identities": ["Colton Batts", "coltonbatts", "colton.batts@gmail.com"],
   "llm": {
     "command": "claude",
     "model": "sonnet",

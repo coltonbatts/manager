@@ -3,12 +3,13 @@ import type { Config } from '../config.ts';
 import { localDate } from '../db.ts';
 import type { DatabaseSync } from '../fs/guard.ts';
 import { discover, isCodeProject, type Candidate } from './discover.ts';
-import { gatherFacts, type Facts } from './facts.ts';
+import { gatherFactsAndHistory, type Facts, type History } from './facts.ts';
 import { pool } from '../util.ts';
 
 export interface ScanResult {
   project: ProjectRow;
   facts: Facts | null;
+  history?: History;
   error?: string;
 }
 
@@ -59,9 +60,9 @@ export async function runScan(db: DatabaseSync, config: Config, { onProgress, se
   const results = await pool(candidates, 6, async (c): Promise<ScanResult> => {
     const project: ProjectRow = { id: ids.get(c.path)!, path: c.path, name: c.name, root: c.root, kind: 'mixed' };
     try {
-      const facts = await gatherFacts(c, isCodeProject(c.path), { maxFiles: config.maxFilesPerProject, skipDirs: config.skipDirs }, now);
+      const { facts, history } = await gatherFactsAndHistory(c, isCodeProject(c.path), { maxFiles: config.maxFilesPerProject, skipDirs: config.skipDirs, identities: config.identities }, now);
       project.kind = facts.kind;
-      return { project, facts };
+      return { project, facts, history };
     } catch (err) {
       return { project, facts: null, error: (err as Error).message };
     } finally {
@@ -78,14 +79,28 @@ export async function runScan(db: DatabaseSync, config: Config, { onProgress, se
     INSERT OR REPLACE INTO snapshots (project_id, date, taken_at, fingerprint, last_activity_at, commits_30d,
       dirty_count, file_count, size_bytes, todo_count, facts_json)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  // Git history is recomputed in full each scan. File-mtime days only ever grow, because a file's
+  // mtime moves forward and would otherwise erase the earlier day it was evidence for.
+  const clearGitDays = db.prepare("DELETE FROM activity_days WHERE project_id = ? AND source = 'git'");
+  const upsertDay = db.prepare(`
+    INSERT INTO activity_days (project_id, date, source, count) VALUES (?, ?, ?, ?)
+    ON CONFLICT(project_id, date, source) DO UPDATE SET count = max(count, excluded.count)`);
+  const clearSignals = db.prepare('DELETE FROM signals WHERE project_id = ?');
+  const insertSignal = db.prepare('INSERT INTO signals (project_id, date, kind, text) VALUES (?, ?, ?, ?)');
 
   db.exec('BEGIN');
   try {
     db.prepare('UPDATE projects SET missing = 1').run();
     const date = localDate(now);
-    for (const { project: p, facts: f } of results) {
+    for (const { project: p, facts: f, history: h } of results) {
       upsertProject.run(p.id, p.path, p.name, p.root, p.kind, now, now);
       if (!f) continue;
+      if (h) {
+        if (f.git) clearGitDays.run(p.id);
+        for (const d of h.days) upsertDay.run(p.id, d.date, d.source, d.count);
+        clearSignals.run(p.id);
+        for (const sig of h.signals) insertSignal.run(p.id, sig.date, sig.kind, sig.text);
+      }
       upsertSnapshot.run(
         p.id, date, now, f.fingerprint, f.lastActivityAt, f.git?.commits30 ?? null,
         f.git ? f.git.modified + f.git.untracked : null, f.fileCount, f.sizeBytes, f.todoCount, JSON.stringify(f),

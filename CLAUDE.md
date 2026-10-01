@@ -43,6 +43,8 @@ src/understand/digest.ts   per-project text the LLM sees (facts, commits, tree, 
 src/understand/redact.ts   credential scrubber applied to every digest
 src/understand/profile.ts  per-project profiles, cached by snapshot fingerprint → data/profiles/*.md
 src/understand/portfolio.ts portfolio synthesis, cached by input hash → data/reports/*.md
+src/patterns/metrics.ts    deterministic metrics from activity_days/signals/events (every number carries its n)
+src/patterns/hypotheses.ts LLM hypotheses over the metrics, with evidence, alternative and falsifier
 src/commands/*.ts       CLI commands
 test/                   node:test; fixtures go in data/test-tmp via the guard
 ```
@@ -53,6 +55,9 @@ test/                   node:test; fixtures go in data/test-tmp via the guard
 - **Snapshot**: one row per project per local day (the latest scan that day wins). `facts_json` holds the full `Facts`.
 - **lastActivityAt**: for a clean git repo, the last commit time. Otherwise the max of last commit and newest file mtime (checkouts make mtimes unreliable in clean repos).
 - **State**: active ≤7d, warm ≤30d, cooling ≤90d, dormant >90d.
+- **Identity**: git stats count only commits whose author matches `identities` in the config. Repos with history but none of it yours are `foreign` (clones) and left out of pattern stats.
+- **activity_days**: `git` rows are recomputed from full history every scan. `files` rows (mtime per day) only ever grow, since mtimes move forward. An active day is the union of both.
+- **Ship evidence**: release tags, launch-like commit subjects (`SHIP_RE` in facts.ts), and manual `manager mark` events.
 - Journal data (slice 4) lives in its own DB file, separate from project data.
 
 ## Conventions
@@ -68,6 +73,6 @@ test/                   node:test; fixtures go in data/test-tmp via the guard
 
 1. ✅ config + guard + scan + status (+ basic `project`)
 2. ✅ per-project LLM profiles via `claude -p`, cached by fingerprint; `report`
-3. git-history backfill + snapshots over time + `patterns`
+3. ✅ git-history backfill + snapshots over time + `patterns` + `mark`
 4. `checkin` + `log` (journal)
 5. local dashboard (`serve`)

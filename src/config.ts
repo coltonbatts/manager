@@ -14,6 +14,7 @@ export interface Config {
   discoveryDepth: number;
   skipDirs: Set<string>;
   maxFilesPerProject: number;
+  identities: string[]; // your git author names/emails/GitHub logins
   llm: LLMConfig;
 }
 
@@ -33,6 +34,7 @@ interface RawConfig {
   discoveryDepth?: number;
   skipDirs?: string[];
   maxFilesPerProject?: number;
+  identities?: string[];
   llm?: Partial<LLMConfig>;
 }
 
@@ -53,6 +55,7 @@ export function normalizeConfig(raw: RawConfig): Config {
     discoveryDepth: raw.discoveryDepth ?? 3,
     skipDirs: new Set(raw.skipDirs ?? []),
     maxFilesPerProject: raw.maxFilesPerProject ?? 20_000,
+    identities: raw.identities ?? [],
     llm: {
       provider: 'claude-cli',
       command: raw.llm?.command ?? 'claude',
