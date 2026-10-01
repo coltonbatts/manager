@@ -1,0 +1,59 @@
+// Project data lives in data/manager.db. (The journal gets its own file in slice 4.)
+
+import { join } from 'node:path';
+import { openDatabase, type DatabaseSync } from './fs/guard.ts';
+import { DATA_DIR } from './paths.ts';
+
+const MIGRATIONS: string[] = [
+  `
+  CREATE TABLE projects (
+    id          TEXT PRIMARY KEY,           -- stable slug
+    path        TEXT NOT NULL UNIQUE,
+    name        TEXT NOT NULL,
+    root        TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    first_seen  INTEGER NOT NULL,
+    last_seen   INTEGER NOT NULL,
+    missing     INTEGER NOT NULL DEFAULT 0
+  );
+  -- One snapshot per project per day (the latest scan that day wins).
+  CREATE TABLE snapshots (
+    project_id       TEXT NOT NULL REFERENCES projects(id),
+    date             TEXT NOT NULL,          -- YYYY-MM-DD, local time
+    taken_at         INTEGER NOT NULL,
+    fingerprint      TEXT NOT NULL,
+    last_activity_at INTEGER,
+    commits_30d      INTEGER,
+    dirty_count      INTEGER,
+    file_count       INTEGER NOT NULL,
+    size_bytes       INTEGER NOT NULL,
+    todo_count       INTEGER NOT NULL,
+    facts_json       TEXT NOT NULL,
+    PRIMARY KEY (project_id, date)
+  );
+  CREATE TABLE scans (
+    id            INTEGER PRIMARY KEY,
+    started_at    INTEGER NOT NULL,
+    finished_at   INTEGER,
+    project_count INTEGER
+  );
+  `,
+];
+
+export function openDb(file = join(DATA_DIR, 'manager.db')): DatabaseSync {
+  const db = openDatabase(file);
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+  const { user_version } = db.prepare('PRAGMA user_version').get() as { user_version: number };
+  for (let v = user_version; v < MIGRATIONS.length; v++) {
+    db.exec('BEGIN');
+    db.exec(MIGRATIONS[v]);
+    db.exec(`PRAGMA user_version = ${v + 1}`);
+    db.exec('COMMIT');
+  }
+  return db;
+}
+
+export function localDate(ms = Date.now()): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}

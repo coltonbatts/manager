@@ -1,0 +1,15 @@
+{
+  "roots": [
+    {
+      "path": "~/Documents",
+      "exclude": ["Adobe", "Blackmagic Design", "Larian Studios", "ComfyUI", "Games", "Unsloth Studio", "Cline", "Codex"]
+    },
+    { "path": "~/dev/github.com/coltonbatts" },
+    { "path": "~/dev", "exclude": ["github.com", "_archive"] }
+  ],
+  "include": [],
+  "exclude": [],
+  "discoveryDepth": 3,
+  "skipDirs": [],
+  "maxFilesPerProject": 20000
+}
