@@ -14,7 +14,7 @@
   "maxFilesPerProject": 20000,
   "identities": ["Colton Batts", "coltonbatts", "colton.batts@gmail.com"],
   "llm": {
-    "command": "claude",
+    "command": "~/.local/bin/claude",
     "model": "sonnet",
     "reportModel": "opus",
     "timeoutSeconds": 180,

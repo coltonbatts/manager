@@ -60,7 +60,7 @@ export function normalizeConfig(raw: RawConfig): Config {
     identities: raw.identities ?? [],
     llm: {
       provider: 'claude-cli',
-      command: raw.llm?.command ?? 'claude',
+      command: expandHome(raw.llm?.command ?? 'claude'),
       model: raw.llm?.model ?? 'sonnet',
       reportModel: raw.llm?.reportModel ?? 'opus',
       timeoutSeconds: raw.llm?.timeoutSeconds ?? 180,
